@@ -1,0 +1,4 @@
+[
+  {"role": "user", "content": "What is the speed of light?"},
+  {"role": "assistant", "content": "The speed of light in a vacuum is approximately 299,792,458 meters per second.",
+  {"role": "user" "content": "missing comma and broken structure}

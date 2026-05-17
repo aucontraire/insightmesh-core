@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcpvault": {
+      "command": "npx",
+      "args": ["-y", "@bitbonsai/mcpvault@latest", "${VAULT_PATH}"]
+    }
+  }
+}

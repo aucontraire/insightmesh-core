@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Test / lint / type caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Speckit scratch (ephemeral agent prompt drafts from T009)
+.specify/scratch/
+
+# MkDocs build output
+site/
+
+# Claude Code per-user settings (machine-specific permission grants)
+.claude/settings.local.json
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+Thumbs.db
