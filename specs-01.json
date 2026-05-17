@@ -1,0 +1,96 @@
+{
+  "product": {
+    "name": "insightmesh-core",
+    "one_liner": "A cognitive knowledge engine that learns over time: multi-agent reasoning + evolving memory + dynamic wiki views.",
+    "problem": [
+      "Chat threads and document searches are fragmented, making it hard to retain insights across sessions.",
+      "Traditional retrieval systems treat knowledge as static and forget past understanding.",
+      "Users and teams need systems that can remember, reason, and evolve contextually over time."
+    ],
+    "value": [
+      "Persistent and evolving memory that reflects real-time understanding, not just static facts.",
+      "Structured, traceable answers built from diverse inputs, not just a single reply.",
+      "A knowledge base that grows with the user — offering context, history, and collaboration."
+    ],
+    "personas": [
+      {
+        "id": "researcher",
+        "needs": ["traceable claims", "living literature reviews", "markdown/PDF export"],
+        "success": "fewer duplicate searches, faster synthesis, clearer citations"
+      },
+      {
+        "id": "engineer",
+        "needs": ["design logs", "decision history", "structured notes"],
+        "success": "faster onboarding, smoother handoff, reduced rework"
+      },
+      {
+        "id": "pm",
+        "needs": ["briefs", "summaries", "topic trackers"],
+        "success": "cleaner communication, visible change tracking, proactive insights"
+      }
+    ]
+  },
+
+  "scope": {
+    "must_have": [
+      "Support for orchestrated reasoning across multiple agents or perspectives.",
+      "Ability to retrieve relevant prior knowledge alongside new information.",
+      "Tools to evolve and version knowledge over time, with traceable source attribution.",
+      "Dynamic, user-friendly outputs (e.g. wiki-style pages) for reuse and collaboration.",
+      "Ability to capture, review, and accept edits to the knowledge base incrementally."
+    ],
+    "nice_to_have": [
+      "Ability to detect conflicting or outdated knowledge and flag for resolution.",
+      "Personalized topic watchlists or summaries that reflect changes over time.",
+      "Integration adapters for external systems (docs, repos, communication tools)."
+    ],
+    "out_of_scope_initially": [
+      "Advanced billing or multi-tenant subscription models.",
+      "Custom model hosting or fine-tuning pipelines."
+    ]
+  },
+
+  "user_journey": {
+    "happy_path": [
+      "User creates a workspace and adds reference materials (documents, notes, etc).",
+      "They ask a complex question, which triggers a multi-perspective reasoning process.",
+      "The system retrieves relevant information (from the LLM and/or a web search) and past context.",
+      "It generates an answer and a wiki-style page with citations and editable content.",
+      "The user reviews the result and can edit or approve it, locking in the learning.",
+      "Later questions build on this evolving knowledge instead of starting from scratch."
+    ],
+    "alternates": [
+      "If no source material is available, guide the user to add context or fetch from allowed tools.",
+      "If conflicting information arises, mark it and suggest a reconciliation flow."
+    ]
+  },
+
+  "acceptance_criteria": [
+    "The system can answer multi-step questions using a mix of current and prior knowledge.",
+    "Users can review, edit, and version knowledge entries over time.",
+    "Each answer includes transparent citations and an option to view prior revisions.",
+    "Knowledge growth is visible and traceable — follow-up queries improve as context deepens."
+  ],
+
+  "metrics": [
+    "User-rated usefulness of answers (e.g. via Likert scale)",
+    "Time-to-answer and revision acceptance rate",
+    "Growth rate of the knowledge base vs. edits or conflicts",
+    "Repeat query success rate using enriched memory"
+  ],
+
+  "risks": [
+    {
+      "risk": "Over-complexity in organizing domain knowledge",
+      "mitigation": "Start with simple structures and evolve based on real usage patterns"
+    },
+    {
+      "risk": "User trust drops if answers appear inconsistent or untraceable",
+      "mitigation": "Ensure all answers are backed by transparent citations and revision history"
+    },
+    {
+      "risk": "Knowledge becomes bloated or redundant",
+      "mitigation": "Use review workflows and drift detection to maintain clarity"
+    }
+  ]
+}

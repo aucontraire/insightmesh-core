@@ -1,0 +1,81 @@
+[project]
+name = "insightmesh-core"
+version = "0.1.0"
+description = "Multi-agent investigative inquiry system that persists synthesized knowledge as Obsidian wiki pages"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk",
+    "pydantic>=2.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "mypy>=1.10",
+    "ruff>=0.4",
+    "black>=24.0",
+]
+
+[project.scripts]
+insightmesh = "src.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "claude_agent_sdk.*"
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports (for banned-api below)
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"dataclasses.dataclass".msg = "Use pydantic.BaseModel with ConfigDict(strict=True) instead. Per constitution v1.1.2 §Project Standards: all data shapes — runtime, internal, or boundary — must be Pydantic. Exception: third-party libraries that require dataclass-typed inputs (document in Complexity Justification Table)."
+"dataclasses.field".msg = "Use pydantic.BaseModel with pydantic.Field instead. See constitution v1.1.2 §Project Standards."
+"typing.NamedTuple".msg = "Use pydantic.BaseModel for new data shapes. See constitution v1.1.2 §Project Standards."
+"collections.namedtuple".msg = "Use pydantic.BaseModel for new data shapes. See constitution v1.1.2 §Project Standards."
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
