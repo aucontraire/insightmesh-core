@@ -64,6 +64,22 @@ When an agent returns malformed JSON, the orchestrator saves the full raw respon
 
 These are deliberate Phase A omissions, scheduled for future specs.
 
+### No multi-conversation export selection
+
+**What's wrong**: The `insightmesh batch` CLI accepts a single transcript file: a flat JSON array of `{"role": ..., "content": ...}` messages, representing **one conversation**. Real exports from Claude.ai or ChatGPT are arrays of *conversation objects* — each with its own metadata and a nested messages array.
+
+If you download your Claude.ai or ChatGPT data and point `insightmesh batch` directly at the export file, it will fail (or, worse, silently misinterpret the structure).
+
+**What works around it today**: extract one conversation from the export manually — typically with `jq` or a small script — and reshape it to the flat `[{"role": ..., "content": ...}, ...]` shape before running `insightmesh batch`. There's no CLI helper for this yet.
+
+**Why it's not built yet**: Spec 001's mandate was "single transcript → wiki." Browsing a multi-conversation export and picking one is its own user story.
+
+**Planned fix** (Spec 002 or a small 001.x patch):
+
+1. `insightmesh list <export.json>` — browse conversations in an export (id, title, date, message count)
+2. `--conversation <id|index>` flag on `batch`
+3. Built-in adapter for the Claude.ai and ChatGPT export schemas (so users don't write `jq` pipelines by hand)
+
 ### No live inquiry mode (Spec 002)
 
 Currently the pipeline is **batch-only** — you feed it an existing chat transcript and it produces wiki pages. There's no way to:

@@ -30,11 +30,11 @@ You spend hours having intellectually rich conversations with Claude or ChatGPT 
 
 ```bash
 # After install (see Getting Started)
-uv run insightmesh batch my-chat-export.json --vault ~/Obsidian/MyVault
+uv run insightmesh batch my-conversation.json --vault ~/Obsidian/MyVault
 ```
 
 ```
-Loaded 20 exchanges from my-chat-export.json
+Loaded 20 exchanges from my-conversation.json
 Vault: /Users/you/Obsidian/MyVault
 Logs:  /Users/you/Obsidian/MyVault/InsightMesh/.logs
 Running pipeline...
@@ -42,6 +42,8 @@ Pipeline complete: 3 created, 0 updated, 3 editor decisions logged.
 ```
 
 Three new wiki pages appear in `~/Obsidian/MyVault/InsightMesh/`, cross-linked via `[[wiki links]]`, with full session log in `.logs/`.
+
+> ⚠️ **Input is one conversation**, as a flat JSON array `[{"role": "user", "content": "..."}, ...]`. Selecting a single conversation out of a multi-conversation **Claude.ai or ChatGPT export** is a planned Spec 002 feature — until then it's a manual `jq` step. See [Known Limitations § No multi-conversation export selection](docs/known-limitations.md#no-multi-conversation-export-selection).
 
 ## Getting started
 
@@ -83,6 +85,7 @@ Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deter
 | Multi-page cross-linking | ✅ |
 | Session logging + decision rationale | ✅ |
 | Same-topic update detection | ✅ |
+| Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | 🟡 Spec 002 — planned |
 | Live inquiry (ask questions, refine, synthesize) | 🟡 Spec 002 — planned |
 | Bias/assumption checking (Critic agent) | 🟡 Spec 003 — planned |
 | Web research (Researcher agent) | 🟡 Spec 003 — planned |

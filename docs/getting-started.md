@@ -248,19 +248,26 @@ The test fixtures are short and synthetic. The real test is feeding the pipeline
 
 ### Step 1: Export a real conversation
 
+!!! warning "Single-conversation only today"
+    The CLI accepts **one conversation** as a flat JSON array:
+    ```
+    [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
+    ```
+    Real exports from Claude.ai and ChatGPT are arrays of *conversation objects* (each with metadata + a nested messages array). You have to extract **one conversation** and reshape it to the flat form by hand before `insightmesh batch` will accept it. There is **no built-in helper for this yet** — see [Known Limitations § No multi-conversation export selection](known-limitations.md#no-multi-conversation-export-selection). A `list` subcommand + `--conversation` flag is planned for Spec 002.
+
 === "ChatGPT"
 
-    Settings → Data Controls → Export data. You'll get a zip with `conversations.json`. Each conversation is an entry in the array.
+    Settings → Data Controls → Export data. You'll get a zip with `conversations.json` — an array of conversation objects, not a flat message array.
 
-    Pick a single conversation you want to test (use `jq` or a text editor to extract just one). Save as `my-conversation.json`.
+    You'll need to (1) pick one conversation, (2) extract its messages, (3) reshape each message to `{"role": ..., "content": ...}`. Inspect the schema first with `jq '.[0] | keys' conversations.json`, then write a small `jq` pipeline to extract and flatten into `my-conversation.json`.
 
 === "Claude (web)"
 
-    Settings → Account → Export data. You'll get a similar JSON dump. Extract a single conversation.
+    Settings → Account → Export data. Similar structure to ChatGPT — array of conversation objects, each with its own messages. Same extract-and-reshape workflow as above.
 
 === "EchoMine or other tools"
 
-    Should already be in the standard `[{"role": "user", "content": "..."}, ...]` shape. If not, convert it.
+    Should already be in the standard `[{"role": "user", "content": "..."}, ...]` shape. If not, reshape it.
 
 ### Step 2: Start small
 
