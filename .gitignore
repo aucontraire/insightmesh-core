@@ -18,6 +18,9 @@ htmlcov/
 # Speckit scratch (ephemeral agent prompt drafts from T009)
 .specify/scratch/
 
+# MkDocs build output
+site/
+
 # Claude Code per-user settings (machine-specific permission grants)
 .claude/settings.local.json
 

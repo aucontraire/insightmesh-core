@@ -69,6 +69,7 @@ Baseline toolchain for all Python work in this project. These dependencies are p
 - **Ruff** — linting (replaces flake8, isort, pyupgrade)
 - **Black** — code formatting (or `ruff format` equivalent)
 - **pytest** — testing primitive
+- **MkDocs Material** — documentation site generator (de facto standard for Python projects in 2026; FastAPI, Pydantic, Typer, Ruff, etc. all use it)
 
 All commands run via `uv run <cmd>` to use the project venv automatically. `uv.lock` is committed for reproducibility.
 
@@ -143,10 +144,11 @@ Constitution version follows semantic versioning:
 - **MINOR**: New principle/section added or materially expanded guidance
 - **PATCH**: Clarifications, wording, typo fixes, non-semantic refinements
 
-**Version**: 1.1.3 | **Ratified**: 2026-05-16 | **Last Amended**: 2026-05-16
+**Version**: 1.1.4 | **Ratified**: 2026-05-16 | **Last Amended**: 2026-05-16
 
 ### Changelog
 
+- **1.1.4** (2026-05-16): Added `MkDocs Material` to Project Standards Development list for project documentation. Single-bounded-capability dep (documentation rendering only). Justified by 2026-standard Python ecosystem convention (FastAPI, Pydantic, Typer, Ruff all use it) and "building in public" content strategy benefits from a real docs site early.
 - **1.1.3** (2026-05-16): Added `Typer` to Project Standards Runtime list. Justified as force-multiplier dep (type-hint-driven CLI parsing, replaces argparse boilerplate). Single bounded capability (CLI parsing). Aligns with the project's broader pattern of letting type hints drive behavior (Pydantic for data, mypy strict for checking, Typer for CLI).
 - **1.1.2** (2026-05-16): Sharpened the Pydantic-vs-dataclass rule in §Project Standards Conventions to remove ambiguity ("all data models" → "all Python classes that group fields together"). Explicitly prohibited `@dataclass`, `typing.NamedTuple`, `collections.namedtuple` in `src/` and `tests/`. Added mechanical enforcement via ruff `TID251` (`flake8-tidy-imports.banned-api`). Root cause: implementation slipped a `@dataclass` for an internal container because the old "data models" wording was ambiguous and the rule had no automated enforcement.
 - **1.1.1** (2026-05-16): Added `uv` to Project Standards. Justified as single-bounded-capability dep (env + package management). `uv.lock` committed for reproducibility. All commands now run via `uv run`.
