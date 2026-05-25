@@ -54,6 +54,7 @@ Return a JSON object matching this schema:
 4. **Title quality.** Titles should be concept-level (e.g., "Speed of Light", "Camera Aperture") not question-level (e.g., "What Is Speed of Light"). Avoid filler words like "Introduction to" or "Understanding".
 5. **Tags.** 2-5 tags per draft, lowercase, hyphen-separated for multi-word (e.g., `physics`, `electromagnetism`, `optical-engineering`). Include the broad domain plus specific concepts.
 6. **Ambiguity flag.** If a group of exchanges doesn't form a coherent topic, still create a draft but set `tentative_title` to `"[REVIEW] <best-guess topic>"` and add a `> [!warning]` callout at the top of `draft_content` explaining the ambiguity.
+7. **Preserve source URLs.** If the source conversation contains URLs (links the user or assistant referenced), carry them into `draft_content` as inline markdown links — `[descriptive text](https://...)` — attached to the relevant claim, tool, or source. Only preserve links that actually appeared in the transcript; never fabricate, guess, or "helpfully" add URLs that were not in the source.
 
 ## What You Do NOT Do
 
