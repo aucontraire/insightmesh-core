@@ -258,6 +258,49 @@ class TestToRoleContent:
             {"role": "assistant", "content": "hi"},
         ]
 
+    def test_skips_empty_and_whitespace_only_content(self) -> None:
+        """Real ChatGPT exports include empty-content nodes (tool-call turns,
+        blank assistant placeholders). These must be dropped so the flattened
+        transcript never carries an empty-string message into Spec 001's
+        Message model (which requires min_length=1)."""
+        from echomine import Message as EMessage
+
+        msgs = [
+            EMessage(
+                id="m1",
+                content="real question",
+                role="user",
+                timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                parent_id=None,
+            ),
+            EMessage(
+                id="m2",
+                content="",  # empty assistant turn (e.g. tool call, no text)
+                role="assistant",
+                timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                parent_id="m1",
+            ),
+            EMessage(
+                id="m3",
+                content="   ",  # whitespace-only
+                role="assistant",
+                timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                parent_id="m2",
+            ),
+            EMessage(
+                id="m4",
+                content="real answer",
+                role="assistant",
+                timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                parent_id="m3",
+            ),
+        ]
+        result = _to_role_content(msgs)
+        assert result == [
+            {"role": "user", "content": "real question"},
+            {"role": "assistant", "content": "real answer"},
+        ]
+
 
 # ===========================================================================
 # US1: Rendering

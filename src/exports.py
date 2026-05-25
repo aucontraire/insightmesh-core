@@ -366,11 +366,15 @@ def _walk_canonical_thread(conv: Conversation) -> list[Message]:
 def _to_role_content(messages: list[Message]) -> list[dict[str, str]]:
     """Convert echomine.Message list to flat {role, content} per FR-026 (b)(c).
 
-    Emits only user/assistant messages; skips system, tool, function, and any other roles.
+    Emits only user/assistant messages; skips system, tool, function, and any
+    other roles. Also skips messages with empty or whitespace-only content:
+    real ChatGPT exports include empty-content nodes (tool-call turns, blank
+    assistant placeholders), and Spec 001's Message model requires non-empty
+    content (min_length=1).
     """
     out: list[dict[str, str]] = []
     for msg in messages:
-        if msg.role in {"user", "assistant"}:
+        if msg.role in {"user", "assistant"} and msg.content.strip():
             out.append({"role": msg.role, "content": msg.content})
     return out
 
