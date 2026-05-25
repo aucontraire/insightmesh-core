@@ -12,6 +12,7 @@ extend this capture to build a SessionLog.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from datetime import UTC, datetime
@@ -43,6 +44,12 @@ from src.transcript import ChatTranscript
 ParsedAgentOutput = SynthesisOutput | HistorianOutput | EditorOutput
 
 _WIKI_LINK_RE = re.compile(r"\[\[([^|\]]+)(?:\|([^\]]+))?\]\]")
+
+# Spec 002 FR-018: single source of truth for the agents the pipeline depends on.
+# Pre-flight check in cli.py imports this to verify every name has a corresponding
+# `.claude/agents/<name>.md` file with matching frontmatter `name:` field.
+# When future specs add agents (Critic, Researcher), update this list in one place.
+EXPECTED_AGENTS: list[str] = ["synthesis", "historian", "editor"]
 
 
 class _AgentCall(BaseModel):
@@ -175,29 +182,42 @@ _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*\n?(.+?)\n?```", re.DOTALL)
 
 
 def _try_extract_json(raw: str) -> str:
-    """Pull a JSON object out of mixed prose+JSON agent output (Layer 2).
+    """Pull a JSON object out of mixed agent output.
 
-    LLMs sometimes wrap structured output in prose or fenced code blocks even
-    when told not to. Try common shapes in order of preference:
+    Agents return clean JSON most of the time, but two real-world conditions
+    break naive extraction, sometimes together:
 
-    1. The raw response itself (already pure JSON — happy path).
-    2. The contents of the first ```json``` (or ```) fenced code block.
-    3. The substring from the first `{` to the last `}` (greedy outermost
-       brace match — works when prose surrounds a JSON object).
+    - The SDK can append trailing metadata after the JSON (an `agentId:`
+      resumption line and a `<usage>` block), so the response no longer ends
+      with `}`.
+    - The agent's own `draft_content` can contain fenced code blocks or braces
+      (e.g., a markdown drum-tab pattern), which fools fence/brace heuristics.
+
+    The robust strategy is to locate the first `{` and let a real JSON parser
+    (`json.JSONDecoder().raw_decode`) consume exactly one JSON value, ignoring
+    everything after it and tolerating braces/fences inside string values.
+    Fence and greedy-brace heuristics are kept only as fallbacks.
 
     Returns the best-guess JSON string; downstream parsing decides if it's
     actually valid.
     """
     stripped = raw.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
-        return stripped
+    start = stripped.find("{")
+    if start != -1:
+        try:
+            _obj, end = json.JSONDecoder().raw_decode(stripped[start:])
+            return stripped[start : start + end]
+        except json.JSONDecodeError:
+            pass
+    # Fallback 1: a fenced code block, but only if it actually wraps JSON
+    # (so we don't grab a drum-tab / code fence from inside draft_content).
     fence_match = _FENCED_JSON_RE.search(raw)
-    if fence_match:
+    if fence_match and fence_match.group(1).strip().startswith("{"):
         return fence_match.group(1).strip()
-    first_brace = raw.find("{")
+    # Fallback 2: greedy first-`{` to last-`}`.
     last_brace = raw.rfind("}")
-    if first_brace != -1 and last_brace > first_brace:
-        return raw[first_brace : last_brace + 1]
+    if start != -1 and last_brace > start:
+        return raw[start : last_brace + 1]
     return stripped
 
 

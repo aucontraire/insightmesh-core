@@ -64,7 +64,11 @@ When an agent returns malformed JSON, the orchestrator saves the full raw respon
 
 These are deliberate Phase A omissions, scheduled for future specs.
 
-### No multi-conversation export selection
+### ~~No multi-conversation export selection~~ — RESOLVED in Spec 002
+
+Resolved by Spec 002 (the `insightmesh list` subcommand + `--conversation` flag on `batch`, powered by the [`echomine`](https://pypi.org/project/echomine/) library). The original gap is left below for historical context.
+
+#### Original problem (pre-Spec-002)
 
 **What's wrong**: The `insightmesh batch` CLI accepts a single transcript file: a flat JSON array of `{"role": ..., "content": ...}` messages, representing **one conversation**. Real exports from Claude.ai or ChatGPT are arrays of *conversation objects* — each with its own metadata and a nested messages array.
 

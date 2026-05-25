@@ -10,8 +10,8 @@ hide:
 
 InsightMesh turns your AI chat history into a **growing wiki you actually own**. Local-first, cross-linked, transparent about what it knows.
 
-!!! info "Input today is a single conversation"
-    The CLI accepts one conversation as a flat JSON array `[{"role": "user", "content": "..."}, ...]`. Selecting one chat out of a multi-conversation **Claude.ai or ChatGPT export** is a planned Spec 002 feature — until then it's a manual `jq` step. See [Known Limitations § No multi-conversation export selection](known-limitations.md#no-multi-conversation-export-selection).
+!!! tip "Spec 002: full Claude.ai / ChatGPT export support"
+    `insightmesh list <export.json>` browses conversations in a Claude.ai or ChatGPT data export; `insightmesh batch <export.json> --conversation <id-or-index> --vault <path>` synthesizes the one you pick. The Spec 001 flat `{role, content}` transcript path is preserved unchanged (FR-014 backward compat). Powered by the [`echomine`](https://pypi.org/project/echomine/) library.
 
 ---
 
@@ -75,7 +75,7 @@ Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deter
 | Multi-page cross-linking | :material-check: |
 | Session logging + decision rationale | :material-check: |
 | Same-topic update detection | :material-check: |
-| Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | :material-clock-outline: Spec 002 — planned |
+| Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | :material-check: Spec 002 — working |
 | Live inquiry (ask questions, refine, synthesize) | :material-clock-outline: Spec 002 — planned |
 | Bias/assumption checking (Critic agent) | :material-clock-outline: Spec 003 — planned |
 | Web research (Researcher agent) | :material-clock-outline: Spec 003 — planned |
