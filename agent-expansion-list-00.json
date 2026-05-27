@@ -1,9 +1,0 @@
-{
-  "PerspectiveBlender": "to merge multiple agent perspectives into coherent outputs",
-  "ConceptEvolution / ConceptResolver": "to handle conflicting information or evolving knowledge",
-  "KnowledgeGraphService Agent": "for graph-aware reasoning",
-  "MemoryEvolution Agent": "dedicated to updating long-term memory / wiki",
-  "DomainClassifier Agent": "to determine domain context and select semantic models",
-  "WikiView Agent": "to generate structured wiki-style views of knowledge",
-  "Orchestration Agent": "higher-level controller managing coordination"
-}

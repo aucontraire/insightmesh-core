@@ -5,7 +5,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Types: mypy strict](https://img.shields.io/badge/types-mypy%20strict-blue)](https://mypy-lang.org/)
-[![License: TBD](https://img.shields.io/badge/license-TBD-lightgrey.svg)](#license)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 InsightMesh turns your AI chat history into a **growing wiki you actually own**. Local-first, cross-linked, transparent about what it knows.
 
@@ -43,7 +43,7 @@ Pipeline complete: 3 created, 0 updated, 3 editor decisions logged.
 
 Three new wiki pages appear in `~/Obsidian/MyVault/InsightMesh/`, cross-linked via `[[wiki links]]`, with full session log in `.logs/`.
 
-> ⚠️ **Input is one conversation**, as a flat JSON array `[{"role": "user", "content": "..."}, ...]`. Selecting a single conversation out of a multi-conversation **Claude.ai or ChatGPT export** is a planned Spec 002 feature — until then it's a manual `jq` step. See [Known Limitations § No multi-conversation export selection](docs/known-limitations.md#no-multi-conversation-export-selection).
+> 🚀 **Spec 002 lands export support**: run `insightmesh list ~/Downloads/conversations.json` to browse a Claude.ai or ChatGPT data export, then `insightmesh batch <export.json> --conversation <id-or-index> --vault ~/Obsidian/MyVault` to synthesize the one you picked. The Spec 001 flat `{role, content}` transcript format is still supported unchanged (FR-014 backward compat).
 
 ## Getting started
 
@@ -85,7 +85,7 @@ Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deter
 | Multi-page cross-linking | ✅ |
 | Session logging + decision rationale | ✅ |
 | Same-topic update detection | ✅ |
-| Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | 🟡 Spec 002 — planned |
+| Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | ✅ Spec 002 |
 | Live inquiry (ask questions, refine, synthesize) | 🟡 Spec 002 — planned |
 | Bias/assumption checking (Critic agent) | 🟡 Spec 003 — planned |
 | Web research (Researcher agent) | 🟡 Spec 003 — planned |
@@ -94,6 +94,8 @@ See **[Known Limitations](docs/known-limitations.md)** for the honest list of wh
 
 ## Documentation
 
+**Published docs: [aucontraire.github.io/insightmesh-core](https://aucontraire.github.io/insightmesh-core/)**
+
 - **[Getting Started](docs/getting-started.md)** — install + first run walkthrough
 - **[Known Limitations](docs/known-limitations.md)** — what's not done, what's slow, what's planned
 
@@ -101,4 +103,4 @@ Local docs preview: `uv run mkdocs serve`
 
 ## License
 
-TBD.
+[AGPL-3.0](LICENSE). If you run a modified version as a network service, the AGPL requires you to make your changes available to its users.

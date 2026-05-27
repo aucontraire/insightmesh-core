@@ -262,6 +262,4 @@ class TestPydanticModels:
 
     def test_chat_transcript_rejects_wrong_types(self) -> None:
         with pytest.raises(ValidationError):
-            ChatTranscript.model_validate(
-                {"source_path": "/path", "exchanges": "not a list"}
-            )
+            ChatTranscript.model_validate({"source_path": "/path", "exchanges": "not a list"})

@@ -116,10 +116,7 @@ class TestWikiPageDraftModel:
         )
         assert draft.tentative_title == "Speed of Light"
         assert draft.related_pages is None or draft.related_pages == []
-        assert (
-            draft.crosslink_recommendations is None
-            or draft.crosslink_recommendations == []
-        )
+        assert draft.crosslink_recommendations is None or draft.crosslink_recommendations == []
 
     def test_historian_augmented(self) -> None:
         """Historian adds related_pages and crosslink_recommendations to the same draft."""
@@ -259,9 +256,7 @@ class TestNormalizeTitle:
     def test_match_collapses_capitalization_and_articles(self) -> None:
         """The actual use case: two titles that refer to the same topic should match."""
         assert normalize_title("Speed of Light") == normalize_title("The Speed of Light")
-        assert normalize_title("the speed of light") == normalize_title(
-            "Speed of Light"
-        )
+        assert normalize_title("the speed of light") == normalize_title("Speed of Light")
 
     def test_distinct_titles_remain_distinct(self) -> None:
         assert normalize_title("Speed of Light") != normalize_title("Speed of Sound")

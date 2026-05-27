@@ -107,7 +107,7 @@ This creates a `.venv/` in the project, installs all runtime + dev dependencies 
 uv run insightmesh --help
 ```
 
-You should see the `batch` command and its options. If you see "command not found," check that `uv sync` completed successfully.
+You should see the `list` and `batch` commands and their options. (`uv run insightmesh --version` prints the installed version.) If you see "command not found," check that `uv sync` completed successfully.
 
 ### 4. Run the test suite
 
@@ -115,7 +115,7 @@ You should see the `batch` command and its options. If you see "command not foun
 uv run pytest
 ```
 
-Expected: **84 tests pass in under a second**. If any fail, something is wrong with the install — file an issue.
+Expected: **all tests pass in under a second** (148 at the time of writing). If any fail, something is wrong with the install — file an issue.
 
 ---
 
@@ -248,22 +248,18 @@ The test fixtures are short and synthetic. The real test is feeding the pipeline
 
 ### Step 1: Export a real conversation
 
-!!! warning "Single-conversation only today"
-    The CLI accepts **one conversation** as a flat JSON array:
-    ```
-    [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
-    ```
-    Real exports from Claude.ai and ChatGPT are arrays of *conversation objects* (each with metadata + a nested messages array). You have to extract **one conversation** and reshape it to the flat form by hand before `insightmesh batch` will accept it. There is **no built-in helper for this yet** — see [Known Limitations § No multi-conversation export selection](known-limitations.md#no-multi-conversation-export-selection). A `list` subcommand + `--conversation` flag is planned for Spec 002.
+!!! tip "New in Spec 002: multi-conversation exports are now first-class"
+    Point `insightmesh list` at any Claude.ai or ChatGPT data export — it parses the export (via the [`echomine`](https://pypi.org/project/echomine/) library), prints a table of conversations, then you pass `--conversation <id-or-index>` to `insightmesh batch` to synthesize the one you picked. No `jq` pipelines, no manual reshaping. The Spec 001 flat-array transcript format is still supported unchanged (FR-014 backward compat).
 
 === "ChatGPT"
 
     Settings → Data Controls → Export data. You'll get a zip with `conversations.json` — an array of conversation objects, not a flat message array.
 
-    You'll need to (1) pick one conversation, (2) extract its messages, (3) reshape each message to `{"role": ..., "content": ...}`. Inspect the schema first with `jq '.[0] | keys' conversations.json`, then write a small `jq` pipeline to extract and flatten into `my-conversation.json`.
+    Run `uv run insightmesh list ~/Downloads/conversations.json` to see the table of conversations in your export, then `uv run insightmesh batch ~/Downloads/conversations.json --conversation <id-or-index> --vault <vault>` to synthesize the one you picked. EchoMine handles the schema parsing under the hood.
 
 === "Claude (web)"
 
-    Settings → Account → Export data. Similar structure to ChatGPT — array of conversation objects, each with its own messages. Same extract-and-reshape workflow as above.
+    Settings → Account → Export data. Similar structure to ChatGPT — an array of conversation objects, each with its own messages. Same `insightmesh list` → `--conversation` workflow as above; EchoMine's Claude adapter handles the schema.
 
 === "EchoMine or other tools"
 
@@ -311,7 +307,7 @@ After the run:
 - **Browse the [Known Limitations](known-limitations.md)** so you know what to expect and what's coming
 - **Read your session logs** — they're rich data for understanding agent behavior
 - **Try running the same transcript twice** — see how stable the synthesis is across runs (it's surprisingly consistent)
-- **Watch this project for Spec 002** (live inquiry mode) and Spec 003 (Critic + Researcher agents)
+- **Watch this project** for live inquiry mode (interactive ask → refine → synthesize) and the Critic + Researcher agents (Spec 003)
 
 ---
 

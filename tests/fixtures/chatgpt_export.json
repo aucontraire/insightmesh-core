@@ -1,0 +1,140 @@
+[
+  {
+    "id": "conv-chatgpt-001",
+    "title": "Async Python patterns",
+    "create_time": 1808092620.0,
+    "update_time": 1808094540.0,
+    "mapping": {
+      "msg-1": {
+        "id": "msg-1",
+        "message": {
+          "id": "msg-1",
+          "author": {"role": "user"},
+          "content": {"content_type": "text", "parts": ["What's the difference between asyncio.gather and asyncio.wait?"]},
+          "create_time": 1808092620.0,
+          "metadata": {}
+        },
+        "parent": null,
+        "children": ["msg-2"]
+      },
+      "msg-2": {
+        "id": "msg-2",
+        "message": {
+          "id": "msg-2",
+          "author": {"role": "assistant"},
+          "content": {"content_type": "text", "parts": ["gather returns results in order; wait returns sets of done and pending futures."]},
+          "create_time": 1808092680.0,
+          "metadata": {}
+        },
+        "parent": "msg-1",
+        "children": ["msg-3", "msg-3b-abandoned"]
+      },
+      "msg-3": {
+        "id": "msg-3",
+        "message": {
+          "id": "msg-3",
+          "author": {"role": "user"},
+          "content": {"content_type": "text", "parts": ["Which should I use for fan-out?"]},
+          "create_time": 1808092800.0,
+          "metadata": {}
+        },
+        "parent": "msg-2",
+        "children": ["msg-4"]
+      },
+      "msg-3b-abandoned": {
+        "id": "msg-3b-abandoned",
+        "message": {
+          "id": "msg-3b-abandoned",
+          "author": {"role": "user"},
+          "content": {"content_type": "text", "parts": ["[abandoned branch - should NOT appear in canonical thread]"]},
+          "create_time": 1808092810.0,
+          "metadata": {}
+        },
+        "parent": "msg-2",
+        "children": []
+      },
+      "msg-4": {
+        "id": "msg-4",
+        "message": {
+          "id": "msg-4",
+          "author": {"role": "assistant"},
+          "content": {"content_type": "text", "parts": ["asyncio.gather is the simpler choice for fan-out with ordered results."]},
+          "create_time": 1808092860.0,
+          "metadata": {}
+        },
+        "parent": "msg-3",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "msg-4"
+  },
+  {
+    "id": "conv-chatgpt-002",
+    "title": "Quick Python regex question",
+    "create_time": 1807905600.0,
+    "update_time": 1807906200.0,
+    "mapping": {
+      "m1": {
+        "id": "m1",
+        "message": {
+          "id": "m1",
+          "author": {"role": "user"},
+          "content": {"content_type": "text", "parts": ["What's the regex for matching ISO 8601 dates?"]},
+          "create_time": 1807905600.0,
+          "metadata": {}
+        },
+        "parent": null,
+        "children": ["m2"]
+      },
+      "m2": {
+        "id": "m2",
+        "message": {
+          "id": "m2",
+          "author": {"role": "assistant"},
+          "content": {"content_type": "text", "parts": ["A basic pattern: \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"]},
+          "create_time": 1807905660.0,
+          "metadata": {}
+        },
+        "parent": "m1",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "m2"
+  },
+  {
+    "id": "conv-chatgpt-003",
+    "title": "Recursive list flattening",
+    "create_time": 1807718400.0,
+    "update_time": 1807719000.0,
+    "mapping": {
+      "xm1": {
+        "id": "xm1",
+        "message": {
+          "id": "xm1",
+          "author": {"role": "user"},
+          "content": {"content_type": "text", "parts": ["How do I flatten a nested list of unknown depth?"]},
+          "create_time": 1807718400.0,
+          "metadata": {}
+        },
+        "parent": null,
+        "children": ["xm2"]
+      },
+      "xm2": {
+        "id": "xm2",
+        "message": {
+          "id": "xm2",
+          "author": {"role": "assistant"},
+          "content": {"content_type": "text", "parts": ["Use a recursive generator: yield from flatten(item) if isinstance(item, list) else yield item."]},
+          "create_time": 1807718460.0,
+          "metadata": {}
+        },
+        "parent": "xm1",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "xm2"
+  }
+]
