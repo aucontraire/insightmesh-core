@@ -5,7 +5,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Types: mypy strict](https://img.shields.io/badge/types-mypy%20strict-blue)](https://mypy-lang.org/)
-[![License: TBD](https://img.shields.io/badge/license-TBD-lightgrey.svg)](#license)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 InsightMesh turns your AI chat history into a **growing wiki you actually own**. Local-first, cross-linked, transparent about what it knows.
 
@@ -94,6 +94,8 @@ See **[Known Limitations](docs/known-limitations.md)** for the honest list of wh
 
 ## Documentation
 
+**Published docs: [aucontraire.github.io/insightmesh-core](https://aucontraire.github.io/insightmesh-core/)**
+
 - **[Getting Started](docs/getting-started.md)** — install + first run walkthrough
 - **[Known Limitations](docs/known-limitations.md)** — what's not done, what's slow, what's planned
 
@@ -101,4 +103,4 @@ Local docs preview: `uv run mkdocs serve`
 
 ## License
 
-TBD.
+[AGPL-3.0](LICENSE). If you run a modified version as a network service, the AGPL requires you to make your changes available to its users.

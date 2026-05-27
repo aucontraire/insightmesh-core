@@ -1,6 +1,6 @@
 site_name: InsightMesh Core
 site_description: A cognitive knowledge engine that compounds understanding over time through multi-agent investigative inquiry, persisted as an evolving Obsidian wiki.
-site_url: https://example.com/insightmesh-core
+site_url: https://aucontraire.github.io/insightmesh-core/
 repo_url: https://github.com/aucontraire/insightmesh-core
 repo_name: aucontraire/insightmesh-core
 edit_uri: edit/main/docs/
@@ -49,6 +49,9 @@ markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - tables
   - toc:
       permalink: true

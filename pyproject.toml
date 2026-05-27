@@ -3,6 +3,7 @@ name = "insightmesh-core"
 version = "0.2.0"
 description = "Multi-agent investigative inquiry system that persists synthesized knowledge as Obsidian wiki pages"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "claude-agent-sdk",
@@ -24,6 +25,10 @@ dev = [
     "mkdocs-material>=9.5",
     "mkdocs<2.0",  # Pin to MkDocs 1.x — 2.0 will break Material; revisit when dust settles
     "types-PyYAML>=6.0",  # mypy stubs for the runtime pyyaml dep added in Spec 002
+]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs<2.0",  # Pin to MkDocs 1.x — 2.0 will break Material; revisit when dust settles
 ]
 
 [project.scripts]
