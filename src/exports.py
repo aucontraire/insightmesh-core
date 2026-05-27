@@ -217,13 +217,29 @@ def list_conversations(path: Path) -> list[InsightMeshSummary]:
     return summaries
 
 
+def _conversational_count(conv: Conversation) -> int:
+    """Count conversational-category turns, matching what the source app shows.
+
+    echomine's `Conversation.message_count` is `len(messages)`, which includes
+    non-conversational nodes (system, tool I/O, reasoning) — inflating the count
+    versus the human-visible turn count. We count only messages whose
+    `content_type_category` is "conversational". Falls back to `message_count`
+    for pre-1.4.0 echomine that doesn't populate the category field.
+    """
+    if not any("content_type_category" in m.metadata for m in conv.messages):
+        return conv.message_count
+    return sum(
+        1 for m in conv.messages if m.metadata.get("content_type_category") == "conversational"
+    )
+
+
 def _project_summary(conv: Conversation) -> InsightMeshSummary:
     """Project an echomine.Conversation to an InsightMeshSummary."""
     return InsightMeshSummary(
         id=conv.id,
         title=conv.title,
         created=conv.created_at,
-        message_count=conv.message_count,
+        message_count=_conversational_count(conv),
     )
 
 
@@ -299,9 +315,7 @@ def extract_conversation(path: Path, selector: str) -> ChatTranscript:
         )
     if target is None:
         # Should not happen since selector resolved; defensive.
-        raise KeyError(
-            f"no conversation matches --conversation '{selector}' in {path}."
-        )
+        raise KeyError(f"no conversation matches --conversation '{selector}' in {path}.")
 
     messages = _walk_canonical_thread(target)
     role_content = _to_role_content(messages)
@@ -371,10 +385,21 @@ def _to_role_content(messages: list[Message]) -> list[dict[str, str]]:
     real ChatGPT exports include empty-content nodes (tool-call turns, blank
     assistant placeholders), and Spec 001's Message model requires non-empty
     content (min_length=1).
+
+    Additionally filters on echomine's `content_type_category`: only
+    "conversational" turns reach synthesis, so reasoning/tool_io/system/media
+    content can never leak as a fake turn even if it arrives with non-empty
+    content. The default is "conversational" so pre-1.4.0 echomine (which does
+    not populate the field) degrades to the prior content-only behavior.
     """
     out: list[dict[str, str]] = []
     for msg in messages:
-        if msg.role in {"user", "assistant"} and msg.content.strip():
+        category = msg.metadata.get("content_type_category", "conversational")
+        if (
+            msg.role in {"user", "assistant"}
+            and category == "conversational"
+            and msg.content.strip()
+        ):
             out.append({"role": msg.role, "content": msg.content})
     return out
 

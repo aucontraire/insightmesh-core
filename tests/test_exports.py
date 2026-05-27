@@ -14,12 +14,15 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 import pytest
+from echomine import Conversation
 
 from src.exports import (
     InsightMeshSummary,
     UnrecognizedExportFormat,
+    _conversational_count,
     _to_role_content,
     detect_adapter,
     extract_conversation,
@@ -125,9 +128,7 @@ class TestSilentIgnoreUnknownFields:
         """
         summaries = list_conversations(CLAUDE_AI)
         # Find conversation #1 (the one with extras).
-        match = next(
-            s for s in summaries if s.id == "c4f5b9e0-abc1-4d11-9f33-spec002fixture01"
-        )
+        match = next(s for s in summaries if s.id == "c4f5b9e0-abc1-4d11-9f33-spec002fixture01")
         assert match.title == "Speed of light, deeper dive"
         assert match.message_count == 4
 
@@ -140,21 +141,15 @@ class TestSilentIgnoreUnknownFields:
 class TestResolveConversationValue:
     def test_numeric_in_range_resolves_as_index(self) -> None:
         summaries = [
-            InsightMeshSummary(
-                id="aaa", title="A", created=datetime(2026, 5, 1), message_count=2
-            ),
-            InsightMeshSummary(
-                id="bbb", title="B", created=datetime(2026, 4, 30), message_count=3
-            ),
+            InsightMeshSummary(id="aaa", title="A", created=datetime(2026, 5, 1), message_count=2),
+            InsightMeshSummary(id="bbb", title="B", created=datetime(2026, 4, 30), message_count=3),
         ]
         assert resolve_conversation_value("0", summaries) == 0
         assert resolve_conversation_value("1", summaries) == 1
 
     def test_non_numeric_resolves_as_id(self) -> None:
         summaries = [
-            InsightMeshSummary(
-                id="aaa", title="A", created=datetime(2026, 5, 1), message_count=2
-            ),
+            InsightMeshSummary(id="aaa", title="A", created=datetime(2026, 5, 1), message_count=2),
             InsightMeshSummary(
                 id="bbb-cd-ef", title="B", created=datetime(2026, 4, 30), message_count=3
             ),
@@ -165,9 +160,7 @@ class TestResolveConversationValue:
     def test_out_of_range_int_falls_back_to_id_lookup(self) -> None:
         """`5` against 2 summaries is not a valid index — try id lookup instead."""
         summaries = [
-            InsightMeshSummary(
-                id="aaa", title="A", created=datetime(2026, 5, 1), message_count=2
-            ),
+            InsightMeshSummary(id="aaa", title="A", created=datetime(2026, 5, 1), message_count=2),
         ]
         with pytest.raises(KeyError):
             resolve_conversation_value("5", summaries)
@@ -301,6 +294,55 @@ class TestToRoleContent:
             {"role": "assistant", "content": "real answer"},
         ]
 
+    def test_drops_non_conversational_categories_even_with_content(self) -> None:
+        """echomine>=1.4.0 tags each message with content_type_category. Only
+        'conversational' turns reach synthesis; reasoning/tool_io/system/media
+        are dropped even if they arrive with non-empty content (e.g. the media
+        '[Image]' placeholder or a Claude text_field fallback)."""
+        from echomine import Message as EMessage
+
+        def mk(
+            mid: str, content: str, role: Literal["user", "assistant"], category: str
+        ) -> EMessage:
+            return EMessage(
+                id=mid,
+                content=content,
+                role=role,
+                timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                parent_id=None,
+                metadata={"content_type_category": category},
+            )
+
+        msgs = [
+            mk("m1", "real question", "user", "conversational"),
+            mk("m2", "[user_editable_context]", "user", "system"),
+            mk("m3", "let me think...", "assistant", "reasoning"),
+            mk("m4", "print(1)", "assistant", "tool_io"),
+            mk("m5", "[Image]", "user", "media"),
+            mk("m6", "real answer", "assistant", "conversational"),
+        ]
+        result = _to_role_content(msgs)
+        assert result == [
+            {"role": "user", "content": "real question"},
+            {"role": "assistant", "content": "real answer"},
+        ]
+
+    def test_missing_category_defaults_to_conversational(self) -> None:
+        """Pre-1.4.0 echomine doesn't populate content_type_category; absence
+        must degrade to the prior content-only behavior, not drop everything."""
+        from echomine import Message as EMessage
+
+        msgs = [
+            EMessage(
+                id="m1",
+                content="no category metadata here",
+                role="user",
+                timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                parent_id=None,
+            ),
+        ]
+        assert _to_role_content(msgs) == [{"role": "user", "content": "no category metadata here"}]
+
 
 # ===========================================================================
 # US1: Rendering
@@ -327,3 +369,47 @@ class TestRenderListTable:
     def test_empty_summaries_produces_empty_state_message(self) -> None:
         out = render_list_table([])
         assert "No conversations" in out
+
+
+# ===========================================================================
+# US1: Conversational-turn count (Msgs column matches the source app)
+# ===========================================================================
+
+
+class TestConversationalCount:
+    @staticmethod
+    def _conv(categories: list[str | None]) -> Conversation:
+        from echomine import Message as EMessage
+
+        msgs = []
+        for i, cat in enumerate(categories):
+            meta = {"content_type_category": cat} if cat is not None else {}
+            msgs.append(
+                EMessage(
+                    id=f"m{i}",
+                    content="x",
+                    role="user",  # role is immaterial: _conversational_count keys on category
+                    timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+                    parent_id=None,
+                    metadata=meta,
+                )
+            )
+        return Conversation(
+            id="conv-1",
+            title="T",
+            created_at=datetime(2026, 5, 1, tzinfo=UTC),
+            messages=msgs,
+        )
+
+    def test_counts_only_conversational_category(self) -> None:
+        """Non-conversational nodes (system/tool_io/reasoning) must not inflate
+        the count the way echomine's len(messages)-based message_count does."""
+        conv = self._conv(["conversational", "system", "conversational", "tool_io", "reasoning"])
+        assert conv.message_count == 5  # echomine counts all nodes
+        assert _conversational_count(conv) == 2  # we count only conversational
+
+    def test_falls_back_to_message_count_when_no_category_present(self) -> None:
+        """Pre-1.4.0 echomine: no message carries content_type_category, so we
+        defer to echomine's own count rather than reporting zero."""
+        conv = self._conv([None, None, None])
+        assert _conversational_count(conv) == conv.message_count == 3
