@@ -133,9 +133,7 @@ def parse_transcript(path: Path) -> ChatTranscript:
     raw = json.loads(path.read_text())
 
     if not isinstance(raw, list):
-        raise ValueError(
-            f"Transcript JSON must be a list of messages, got {type(raw).__name__}"
-        )
+        raise ValueError(f"Transcript JSON must be a list of messages, got {type(raw).__name__}")
 
     if len(raw) == 0:
         raise ValueError(f"Transcript is empty: {path}")

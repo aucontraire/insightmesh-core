@@ -75,9 +75,11 @@ def _editor_decision_fixture(action: str = "created") -> EditorDecision:
             content_keyword_overlap="strong" if action != "created" else "none",
         ),
         confidence="high",
-        rationale="No existing page; created fresh."
-        if action == "created"
-        else "Title and tags match — updating.",
+        rationale=(
+            "No existing page; created fresh."
+            if action == "created"
+            else "Title and tags match — updating."
+        ),
     )
 
 
@@ -131,9 +133,7 @@ class TestSessionError:
         assert err.error_type == "rate_limit"
 
     def test_round_trip(self) -> None:
-        original = SessionError(
-            agent="editor", error_type="parse_error", message="invalid JSON"
-        )
+        original = SessionError(agent="editor", error_type="parse_error", message="invalid JSON")
         restored = SessionError.model_validate_json(original.model_dump_json())
         assert restored == original
 
@@ -246,9 +246,7 @@ class TestSessionLogModel:
             },
             wiki_pages_created=["/vault/InsightMesh/Speed of Light.md"],
             wiki_pages_updated=[],
-            cross_links=[
-                CrossLinkRecord(from_page="Speed of Light", to_page="Electromagnetism")
-            ],
+            cross_links=[CrossLinkRecord(from_page="Speed of Light", to_page="Electromagnetism")],
             status="completed",
             errors=[],
             duration_seconds=108.7,

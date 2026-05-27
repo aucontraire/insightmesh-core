@@ -167,9 +167,7 @@ def _parse_agent_frontmatter(path: Path) -> AgentDefinition | MalformedAgent:
         return MalformedAgent(file_path=str(path), reason=f"YAML parse error: {exc}")
 
     if not isinstance(parsed, dict):
-        return MalformedAgent(
-            file_path=str(path), reason="YAML frontmatter is not a mapping"
-        )
+        return MalformedAgent(file_path=str(path), reason="YAML frontmatter is not a mapping")
     name = parsed.get("name")
     if not isinstance(name, str) or not name.strip():
         return MalformedAgent(
@@ -338,9 +336,7 @@ async def _run_pipeline_from_export(
         typer.echo(str(exc), err=True)
         return 1
 
-    typer.echo(
-        f"Loaded {len(transcript.exchanges)} exchanges from {export_path}", err=True
-    )
+    typer.echo(f"Loaded {len(transcript.exchanges)} exchanges from {export_path}", err=True)
     typer.echo(f"Vault: {vault}", err=True)
     typer.echo(f"Logs:  {logs_dir}", err=True)
     typer.echo("Running pipeline...", err=True)
@@ -442,9 +438,7 @@ def batch(
     else:
         assert conversation is not None  # narrowed by above checks
         exit_code = asyncio.run(
-            _run_pipeline_from_export(
-                transcript_resolved, conversation, vault_resolved, logs_dir
-            )
+            _run_pipeline_from_export(transcript_resolved, conversation, vault_resolved, logs_dir)
         )
 
     if exit_code != 0:

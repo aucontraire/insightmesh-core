@@ -322,9 +322,7 @@ async def run_batch(
                 try:
                     call.parsed_output = _parse_agent_output(call.subagent_type, raw)
                 except Exception as exc:
-                    call.error = (
-                        f"Failed to parse {call.subagent_type} output: {exc}"
-                    )
+                    call.error = f"Failed to parse {call.subagent_type} output: {exc}"
 
     batch_duration = time.monotonic() - batch_started_monotonic
 
@@ -342,9 +340,7 @@ async def run_batch(
     return _finalize_result(agent_calls)
 
 
-def _first_call(
-    calls: dict[str, _AgentCall], subagent_type: str
-) -> _AgentCall | None:
+def _first_call(calls: dict[str, _AgentCall], subagent_type: str) -> _AgentCall | None:
     """Return the first call to a given sub-agent (None if not invoked)."""
     return next((c for c in calls.values() if c.subagent_type == subagent_type), None)
 
@@ -361,15 +357,11 @@ def _extract_cross_links(editor_output: EditorOutput) -> list[CrossLinkRecord]:
     """Pull CrossLinkRecord entries out of EditorOutput.results.crosslinks_applied."""
     records: list[CrossLinkRecord] = []
     for result in editor_output.results:
-        from_page = str(result.final_frontmatter.get("title", "")) or Path(
-            result.file_path
-        ).stem
+        from_page = str(result.final_frontmatter.get("title", "")) or Path(result.file_path).stem
         for link in result.crosslinks_applied:
             to_page, display = _parse_wiki_link(link)
             records.append(
-                CrossLinkRecord(
-                    from_page=from_page, to_page=to_page, display_text=display
-                )
+                CrossLinkRecord(from_page=from_page, to_page=to_page, display_text=display)
             )
     return records
 
@@ -378,9 +370,7 @@ def _call_to_agent_output(call: _AgentCall) -> AgentOutput:
     """Convert an internal _AgentCall into the public AgentOutput model."""
     if call.subagent_type not in {"synthesis", "historian", "editor"}:
         # Defensive: orchestrator should never invoke other agents in Phase A.
-        raise ValueError(
-            f"Unexpected sub-agent in session: {call.subagent_type}"
-        )
+        raise ValueError(f"Unexpected sub-agent in session: {call.subagent_type}")
     return AgentOutput(
         agent_name=call.subagent_type,  # type: ignore[arg-type]
         input_summary=call.input_prompt[:500],
@@ -422,9 +412,7 @@ def _build_session_log(
     wiki_pages_updated: list[str] = []
     cross_links: list[CrossLinkRecord] = []
     processed_indices: set[int] = set()
-    if isinstance(editor_call, _AgentCall) and isinstance(
-        editor_call.parsed_output, EditorOutput
-    ):
+    if isinstance(editor_call, _AgentCall) and isinstance(editor_call.parsed_output, EditorOutput):
         wiki_pages_created = [
             r.file_path for r in editor_call.parsed_output.results if r.action == "created"
         ]
@@ -500,11 +488,7 @@ def _finalize_result(agent_calls: dict[str, _AgentCall]) -> EditorOutput:
             "the orchestrator did not follow the pipeline"
         )
     if editor_call.error:
-        raise RuntimeError(
-            f"Editor agent failed (non-recoverable per FR-013): {editor_call.error}"
-        )
+        raise RuntimeError(f"Editor agent failed (non-recoverable per FR-013): {editor_call.error}")
     if not isinstance(editor_call.parsed_output, EditorOutput):
-        raise RuntimeError(
-            "Editor agent output could not be parsed as EditorOutput"
-        )
+        raise RuntimeError("Editor agent output could not be parsed as EditorOutput")
     return editor_call.parsed_output

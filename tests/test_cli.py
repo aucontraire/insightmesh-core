@@ -145,9 +145,7 @@ class TestBatchBackwardCompat:
         async def _fake_run_batch(**kwargs: object) -> object:  # type: ignore[no-untyped-def]
             return _FakeResult()
 
-        with _chdir(tmp_path), patch(
-            "src.cli.run_batch", side_effect=_fake_run_batch
-        ) as mock_run:
+        with _chdir(tmp_path), patch("src.cli.run_batch", side_effect=_fake_run_batch) as mock_run:
             result = runner.invoke(app, ["batch", str(FLAT_ARRAY), "--vault", str(vault)])
         # Either the mock got called (preserved path) OR the runner errored cleanly with
         # a recognizable Spec 001 path message.
@@ -206,9 +204,7 @@ class TestInspectAgentsDirectory:
         agents.mkdir(parents=True)
         for name in ("synthesis", "historian", "editor"):
             (agents / f"{name}.md").write_text(f"---\nname: {name}\n---\nPrompt.\n")
-        missing, malformed = _inspect_agents_directory(
-            agents, ["synthesis", "historian", "editor"]
-        )
+        missing, malformed = _inspect_agents_directory(agents, ["synthesis", "historian", "editor"])
         assert missing == []
         assert malformed == []
 
@@ -217,9 +213,7 @@ class TestInspectAgentsDirectory:
         agents.mkdir(parents=True)
         for name in ("synthesis", "editor"):
             (agents / f"{name}.md").write_text(f"---\nname: {name}\n---\n")
-        missing, malformed = _inspect_agents_directory(
-            agents, ["synthesis", "historian", "editor"]
-        )
+        missing, malformed = _inspect_agents_directory(agents, ["synthesis", "historian", "editor"])
         assert missing == ["historian"]
         assert malformed == []
 
@@ -227,9 +221,7 @@ class TestInspectAgentsDirectory:
         agents = tmp_path / ".claude" / "agents"
         agents.mkdir(parents=True)
         (agents / "synthesis.md").write_text("---\nname: synthesis\n---\n")
-        missing, malformed = _inspect_agents_directory(
-            agents, ["synthesis", "historian", "editor"]
-        )
+        missing, malformed = _inspect_agents_directory(agents, ["synthesis", "historian", "editor"])
         assert sorted(missing) == ["editor", "historian"]
 
     def test_dir_missing_treats_as_all_missing(self, tmp_path: Path) -> None:
@@ -244,9 +236,7 @@ class TestInspectAgentsDirectory:
         agents.mkdir(parents=True)
         for name in ("synthesis", "historian", "editor", "experimental_extra"):
             (agents / f"{name}.md").write_text(f"---\nname: {name}\n---\n")
-        missing, malformed = _inspect_agents_directory(
-            agents, ["synthesis", "historian", "editor"]
-        )
+        missing, malformed = _inspect_agents_directory(agents, ["synthesis", "historian", "editor"])
         assert missing == []
         assert malformed == []
 
@@ -335,9 +325,9 @@ class TestPreflightIntegratedWithBatch:
             runner.invoke(app, ["batch", str(FLAT_ARRAY), "--vault", str(vault)])
         # Logs dir should NOT have been created by the pre-flight failure path
         # (Spec 001's success path creates it; pre-flight should not).
-        assert not logs_dir.exists(), (
-            f"pre-flight failure should not have created {logs_dir} per FR-019"
-        )
+        assert (
+            not logs_dir.exists()
+        ), f"pre-flight failure should not have created {logs_dir} per FR-019"
 
 
 # ===========================================================================

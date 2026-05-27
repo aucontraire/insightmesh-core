@@ -73,7 +73,7 @@ def normalize_title(title: str) -> str:
     for article in _LEADING_ARTICLES:
         prefix = f"{article} "
         if s.startswith(prefix):
-            return s[len(prefix):]
+            return s[len(prefix) :]
     return s
 
 
