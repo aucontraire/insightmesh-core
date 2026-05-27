@@ -1,3 +1,5 @@
+> **ARCHIVED — superseded historical reference.** This is the original product-vision spec (2025-09-07), predating the speckit specs `001-chat-to-wiki-batch` and `002-pre-flight-validation`. It is kept for roadmap and provenance only; it is **not** a current or authoritative spec. For the live roadmap see the active `specs/` directories.
+
 # Feature Specification: Cognitive Knowledge Engine (InsightMesh Core)
 
 **Feature Branch**: `001-product-name-insightmesh`  
