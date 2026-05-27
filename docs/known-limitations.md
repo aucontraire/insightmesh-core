@@ -21,7 +21,7 @@ This is the honest list. Phase A (Spec 001) shipped a working pipeline, but seve
 
 **How to mitigate today**: nothing in-product. Plan your runs accordingly.
 
-**Planned fixes** (Spec 002+):
+**Planned fixes** (future / Phase B):
 
 1. Pass transcript by file path instead of inline JSON in the orchestrator prompt
 2. Migrate orchestration from main-Claude-as-orchestrator to deterministic Python via LangGraph (Phase B)
@@ -38,15 +38,17 @@ Every run calls Claude API multiple times. There's no caching across runs. A 200
 
 ## UX gaps
 
-### Missing-agent silent degradation
+### ~~Missing-agent silent degradation~~ — RESOLVED in Spec 002
+
+Resolved by Spec 002's pre-flight validation: `insightmesh batch` now inspects `.claude/agents/` before running and **aborts with a clear stderr error** if any expected agent (`synthesis`, `historian`, `editor`) is missing or has malformed frontmatter, instead of silently running a degraded pipeline. The original gap is preserved below for context.
+
+#### Original problem (pre-Spec-002)
 
 **What's wrong**: If one of the three sub-agents (`synthesis.md`, `historian.md`, `editor.md`) is missing from `.claude/agents/`, the main Claude orchestrator gracefully skips it without raising an error. The pipeline reports `status: "completed"` with `errors: []` even though a step was silently omitted.
 
 **Why it's technically correct**: An agent that doesn't exist isn't "errored" — it just wasn't invoked. The session log accurately reflects what ran.
 
 **Why it's a problem**: Users can't tell from the CLI output that they got a degraded result. The only signal is fewer cross-links than expected.
-
-**Planned fix** (Spec 002 or 001.1): pre-flight agent presence check in the CLI; warn loudly to stderr if any expected agent is missing.
 
 ### Historian doesn't always recommend reverse cross-links
 
@@ -84,7 +86,7 @@ If you download your Claude.ai or ChatGPT data and point `insightmesh batch` dir
 2. `--conversation <id|index>` flag on `batch`
 3. Built-in adapter for the Claude.ai and ChatGPT export schemas (so users don't write `jq` pipelines by hand)
 
-### No live inquiry mode (Spec 002)
+### No live inquiry mode (planned)
 
 Currently the pipeline is **batch-only** — you feed it an existing chat transcript and it produces wiki pages. There's no way to:
 
@@ -92,7 +94,7 @@ Currently the pipeline is **batch-only** — you feed it an existing chat transc
 - Have the system propose clarifying questions before synthesizing (the Refiner agent from CogniVault)
 - Run a tighter loop than "export → batch → review"
 
-This is Spec 002's whole purpose.
+This is the next major capability on the roadmap (the Refiner agent + an interactive loop). It is not yet scheduled to a spec — Spec 002 turned out to be pre-flight validation + multi-conversation export selection, not live inquiry.
 
 ### No bias or assumption checking (Spec 003)
 

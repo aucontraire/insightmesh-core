@@ -107,7 +107,7 @@ This creates a `.venv/` in the project, installs all runtime + dev dependencies 
 uv run insightmesh --help
 ```
 
-You should see the `batch` command and its options. If you see "command not found," check that `uv sync` completed successfully.
+You should see the `list` and `batch` commands and their options. (`uv run insightmesh --version` prints the installed version.) If you see "command not found," check that `uv sync` completed successfully.
 
 ### 4. Run the test suite
 
@@ -115,7 +115,7 @@ You should see the `batch` command and its options. If you see "command not foun
 uv run pytest
 ```
 
-Expected: **84 tests pass in under a second**. If any fail, something is wrong with the install — file an issue.
+Expected: **all tests pass in under a second** (148 at the time of writing). If any fail, something is wrong with the install — file an issue.
 
 ---
 
@@ -259,7 +259,7 @@ The test fixtures are short and synthetic. The real test is feeding the pipeline
 
 === "Claude (web)"
 
-    Settings → Account → Export data. Similar structure to ChatGPT — array of conversation objects, each with its own messages. Same extract-and-reshape workflow as above.
+    Settings → Account → Export data. Similar structure to ChatGPT — an array of conversation objects, each with its own messages. Same `insightmesh list` → `--conversation` workflow as above; EchoMine's Claude adapter handles the schema.
 
 === "EchoMine or other tools"
 
@@ -307,7 +307,7 @@ After the run:
 - **Browse the [Known Limitations](known-limitations.md)** so you know what to expect and what's coming
 - **Read your session logs** — they're rich data for understanding agent behavior
 - **Try running the same transcript twice** — see how stable the synthesis is across runs (it's surprisingly consistent)
-- **Watch this project for Spec 002** (live inquiry mode) and Spec 003 (Critic + Researcher agents)
+- **Watch this project** for live inquiry mode (interactive ask → refine → synthesize) and the Critic + Researcher agents (Spec 003)
 
 ---
 

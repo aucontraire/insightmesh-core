@@ -44,7 +44,7 @@ You spend hours having intellectually rich conversations with Claude or ChatGPT 
 
     ---
 
-    Honest list of what doesn't work yet, what's slow, and what's planned for Spec 002+.
+    Honest list of what doesn't work yet, what's slow, and what's planned next.
 
 </div>
 
@@ -65,7 +65,7 @@ flowchart TD
 
 Three sub-agents defined as markdown files in `.claude/agents/`, orchestrated through `claude-agent-sdk`. The Editor uses the [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) `obsidian-markdown` skill for proper wikilink and frontmatter syntax.
 
-Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deterministic execution and to address the [SC-001 timing limitation](known-limitations.md#sc-001-timing-2x-over-budget).
+Phase B will eventually migrate orchestration to LangGraph for deterministic execution — but that is triggered by orchestration needs, not the next step. The trigger is the first feature that needs reliable parallel fan-out/fan-in (the multi-perspective Critic + Researcher agents), or the point at which the [SC-001 timing limitation](known-limitations.md#sc-001-timing-2x-over-budget) and orchestrator overhead become a real constraint. Until then the roadmap stays on the sub-agent pipeline: adding agents and richer content handling (attachments, images) as sub-agents while the prompts and JSON contracts stabilize.
 
 ## Status
 
@@ -76,6 +76,7 @@ Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deter
 | Session logging + decision rationale | :material-check: |
 | Same-topic update detection | :material-check: |
 | Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | :material-check: Spec 002 — working |
-| Live inquiry (ask questions, refine, synthesize) | :material-clock-outline: Spec 002 — planned |
+| Pre-flight validation (vault + agent presence checks) | :material-check: Spec 002 — working |
+| Live inquiry (ask questions, refine, synthesize) | :material-clock-outline: planned |
 | Bias/assumption checking (Critic agent) | :material-clock-outline: Spec 003 — planned |
 | Web research (Researcher agent) | :material-clock-outline: Spec 003 — planned |
