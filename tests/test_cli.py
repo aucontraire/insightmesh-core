@@ -37,6 +37,16 @@ FLAT_ARRAY = FIXTURES / "single_topic.json"  # Spec 001 fixture for backward com
 runner = CliRunner()
 
 
+class TestVersion:
+    def test_version_flag_prints_package_version_and_exits(self) -> None:
+        from importlib.metadata import version
+
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert version("insightmesh-core") in result.stdout
+        assert result.stdout.startswith("insightmesh ")
+
+
 # ===========================================================================
 # US1: list subcommand
 # ===========================================================================

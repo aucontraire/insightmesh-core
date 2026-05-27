@@ -46,8 +46,26 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from importlib.metadata import version
+
+        typer.echo(f"insightmesh {version('insightmesh-core')}")
+        raise typer.Exit()
+
+
 @app.callback()
-def _root_callback() -> None:
+def _root_callback(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show the InsightMesh version and exit.",
+        ),
+    ] = False,
+) -> None:
     """Force subcommand-style invocation (`insightmesh batch ...` / `insightmesh list ...`)."""
 
 
