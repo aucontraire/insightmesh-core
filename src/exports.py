@@ -377,30 +377,78 @@ def _walk_canonical_thread(conv: Conversation) -> list[Message]:
     return list(conv.messages)
 
 
+def _render_attachments(msg: Message) -> str:
+    """Render echomine attachment text as labeled block(s) for inline folding (Spec 003).
+
+    Reads `msg.metadata["attachments"]` (per `contracts/attachment-rendering.md`),
+    skips entries whose `extracted_content` is empty or whitespace, and emits a
+    labeled block per attachment whose header identifies the source: `file: <name>`
+    when a filename is present, or `pasted text` when unnamed. Multiple blocks
+    join in original source order, separated by a blank line. Returns "" when
+    nothing renderable is found.
+    """
+    raw = msg.metadata.get("attachments")
+    if not isinstance(raw, list):
+        return ""
+    blocks: list[str] = []
+    for att in raw:
+        if not isinstance(att, dict):
+            continue
+        text = att.get("extracted_content")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        name = att.get("file_name")
+        header = f"file: {name}" if isinstance(name, str) and name else "pasted text"
+        blocks.append(
+            f"--- Attached/pasted content ({header}) ---\n{text}\n--- End attached content ---"
+        )
+    return "\n\n".join(blocks)
+
+
 def _to_role_content(messages: list[Message]) -> list[dict[str, str]]:
-    """Convert echomine.Message list to flat {role, content} per FR-026 (b)(c).
+    """Convert echomine.Message list to flat {role, content} per Spec 002 (FR-026) and Spec 003.
 
-    Emits only user/assistant messages; skips system, tool, function, and any
-    other roles. Also skips messages with empty or whitespace-only content:
-    real ChatGPT exports include empty-content nodes (tool-call turns, blank
-    assistant placeholders), and Spec 001's Message model requires non-empty
-    content (min_length=1).
-
-    Additionally filters on echomine's `content_type_category`: only
-    "conversational" turns reach synthesis, so reasoning/tool_io/system/media
-    content can never leak as a fake turn even if it arrives with non-empty
-    content. The default is "conversational" so pre-1.4.0 echomine (which does
-    not populate the field) degrades to the prior content-only behavior.
+    For each user/assistant message:
+    - Render any attachment extracted text via `_render_attachments` FIRST (the
+      harvest-before-skip ordering rule from Spec 003): attachment-only messages
+      arrive with `content_type_category == "attachment"` and `content == ""`,
+      and would otherwise be dropped before their metadata could be read.
+    - `category == "attachment"`: contribute a turn only when attachment text is
+      present; the rendered block becomes the message content.
+    - `category == "conversational"` (default when the field is absent,
+      preserving pre-1.4.0 echomine behavior): contribute the typed content;
+      when attachment text is also present, append it as a labeled block after
+      the typed content.
+    - All other categories (reasoning/tool_io/system/media/unknown) are
+      excluded, even if they carry an attachments key.
+    - Messages with no attachments are unchanged from prior behavior
+      (Spec 003 FR-007 / FR-011 no-regression).
     """
     out: list[dict[str, str]] = []
     for msg in messages:
+        if msg.role not in {"user", "assistant"}:
+            continue
         category = msg.metadata.get("content_type_category", "conversational")
-        if (
-            msg.role in {"user", "assistant"}
-            and category == "conversational"
-            and msg.content.strip()
-        ):
-            out.append({"role": msg.role, "content": msg.content})
+        attachment_text = _render_attachments(msg)
+        base = msg.content.strip()
+
+        if category == "attachment":
+            if not attachment_text:
+                continue
+            content = attachment_text
+        elif category == "conversational":
+            if not base and not attachment_text:
+                continue
+            if attachment_text and base:
+                content = f"{msg.content}\n\n{attachment_text}"
+            elif attachment_text:
+                content = attachment_text
+            else:
+                content = msg.content
+        else:
+            continue
+
+        out.append({"role": msg.role, "content": content})
     return out
 
 
