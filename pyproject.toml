@@ -1,6 +1,6 @@
 [project]
 name = "insightmesh-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Multi-agent investigative inquiry system that persists synthesized knowledge as Obsidian wiki pages"
 readme = "README.md"
 license = { file = "LICENSE" }

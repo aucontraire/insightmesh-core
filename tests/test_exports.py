@@ -23,6 +23,7 @@ from src.exports import (
     InsightMeshSummary,
     UnrecognizedExportFormat,
     _conversational_count,
+    _render_attachments,
     _to_role_content,
     detect_adapter,
     extract_conversation,
@@ -80,7 +81,7 @@ class TestAdapterDetection:
 class TestListConversations:
     def test_list_returns_summaries_for_claude_ai(self) -> None:
         summaries = list_conversations(CLAUDE_AI)
-        assert len(summaries) == 3
+        assert len(summaries) == 4
         assert all(isinstance(s, InsightMeshSummary) for s in summaries)
 
     def test_list_returns_summaries_for_chatgpt(self) -> None:
@@ -342,6 +343,269 @@ class TestToRoleContent:
             ),
         ]
         assert _to_role_content(msgs) == [{"role": "user", "content": "no category metadata here"}]
+
+
+# ===========================================================================
+# Spec 003 US1: Attachment / pasted text capture
+# ===========================================================================
+
+
+class TestAttachmentCapture:
+    """Spec 003: harvest attachment extracted text BEFORE the empty/category skip
+    and fold it inline into the owning message's content (FR-001..FR-011)."""
+
+    @staticmethod
+    def _mk(
+        role: Literal["user", "assistant"],
+        content: str,
+        *,
+        category: str | None = "conversational",
+        attachments: list[dict[str, object]] | None = None,
+    ) -> object:
+        from echomine import Message as EMessage
+
+        meta: dict[str, object] = {}
+        if category is not None:
+            meta["content_type_category"] = category
+        if attachments is not None:
+            meta["attachments"] = attachments
+        return EMessage(
+            id="m",
+            content=content,
+            role=role,
+            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+            parent_id=None,
+            metadata=meta,
+        )
+
+    def test_attachment_only_message_now_surfaces(self) -> None:
+        """Regression for FR-002: an attachment-only message (echomine sets
+        category='attachment' and content='') used to be dropped before its
+        metadata was read. It now contributes a user turn carrying the
+        rendered block."""
+        msgs = [
+            self._mk(
+                "user",
+                "",
+                category="attachment",
+                attachments=[
+                    {"file_name": "", "file_type": "txt", "extracted_content": "PASTED BODY"}
+                ],
+            )
+        ]
+        result = _to_role_content(msgs)
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "PASTED BODY" in result[0]["content"]
+        assert "pasted text" in result[0]["content"]  # header for unnamed
+
+    def test_conversational_message_folds_typed_and_attachment_text(self) -> None:
+        """FR-003: typed text plus attachment text both contribute, demarcated
+        by a labeled block appended after the typed text."""
+        msgs = [
+            self._mk(
+                "user",
+                "Here is the doc, thoughts?",
+                attachments=[
+                    {
+                        "file_name": "report.pdf",
+                        "file_type": "pdf",
+                        "extracted_content": "DOC BODY",
+                    }
+                ],
+            )
+        ]
+        out = _to_role_content(msgs)[0]["content"]
+        assert "Here is the doc, thoughts?" in out
+        assert "DOC BODY" in out
+        assert "file: report.pdf" in out  # FR-008 attribution header
+        # Typed text appears BEFORE the attachment block (FR-003).
+        assert out.index("Here is the doc") < out.index("DOC BODY")
+
+    def test_multiple_attachments_in_source_order(self) -> None:
+        """US1 AC4: multiple attachments included in their original source order."""
+        msgs = [
+            self._mk(
+                "user",
+                "",
+                category="attachment",
+                attachments=[
+                    {"file_name": "first.txt", "extracted_content": "FIRST_BODY"},
+                    {"file_name": "second.txt", "extracted_content": "SECOND_BODY"},
+                ],
+            )
+        ]
+        out = _to_role_content(msgs)[0]["content"]
+        assert out.index("FIRST_BODY") < out.index("SECOND_BODY")
+        assert "file: first.txt" in out and "file: second.txt" in out
+
+    def test_header_distinguishes_named_from_pasted(self) -> None:
+        """FR-008 + Clarifications: header reads `file: <name>` for a named
+        attachment and `pasted text` for an unnamed paste."""
+        named = self._mk(
+            "user",
+            "",
+            category="attachment",
+            attachments=[{"file_name": "x.md", "extracted_content": "BODY"}],
+        )
+        unnamed = self._mk(
+            "user",
+            "",
+            category="attachment",
+            attachments=[{"file_name": "", "extracted_content": "BODY"}],
+        )
+        assert "file: x.md" in _to_role_content([named])[0]["content"]
+        assert "pasted text" in _to_role_content([unnamed])[0]["content"]
+
+    def test_empty_or_whitespace_extracted_content_is_ignored(self) -> None:
+        """FR-004: an attachment with empty or whitespace extracted_content
+        produces no block. An attachment-only message whose only attachment is
+        empty stays dropped (no placeholder turn)."""
+        empty_only = self._mk(
+            "user",
+            "",
+            category="attachment",
+            attachments=[{"file_name": "", "extracted_content": ""}],
+        )
+        whitespace_only = self._mk(
+            "user",
+            "",
+            category="attachment",
+            attachments=[{"file_name": "", "extracted_content": "   \n  "}],
+        )
+        # Both messages produce no turns at all.
+        assert _to_role_content([empty_only]) == []
+        assert _to_role_content([whitespace_only]) == []
+        # On a conversational message with typed text plus an empty attachment,
+        # the typed text still contributes; no bare delimiter appears.
+        with_typed = self._mk(
+            "user",
+            "real question",
+            attachments=[{"file_name": "x", "extracted_content": ""}],
+        )
+        out = _to_role_content([with_typed])[0]["content"]
+        assert out == "real question"
+        assert "Attached/pasted content" not in out
+
+    def test_non_conversational_categories_dropped_even_with_attachments(self) -> None:
+        """FR-005: reasoning / tool_io / system / media / unknown stay excluded
+        even if (pathologically) they carry an `attachments` key."""
+        for cat in ("reasoning", "tool_io", "system", "media", "unknown"):
+            m = self._mk(
+                "assistant",
+                "should not appear",
+                category=cat,
+                attachments=[{"file_name": "x", "extracted_content": "SHOULD_NOT_APPEAR"}],
+            )
+            assert _to_role_content([m]) == [], f"category {cat} leaked"
+
+    def test_missing_category_with_attachments_still_folds(self) -> None:
+        """FR-006: when `content_type_category` is absent (pre-1.4.0 echomine),
+        the conversational default still applies and attachment text folds."""
+        m = self._mk(
+            "user",
+            "typed",
+            category=None,
+            attachments=[{"file_name": "n.md", "extracted_content": "ATTACH_BODY"}],
+        )
+        out = _to_role_content([m])[0]["content"]
+        assert "typed" in out and "ATTACH_BODY" in out
+
+    def test_message_without_attachments_unchanged(self) -> None:
+        """FR-011: a conversational message that carries no attachments is
+        emitted identically to its typed content (no folding, no markup)."""
+        m = self._mk("user", "just typed text", attachments=None)
+        out = _to_role_content([m])
+        assert out == [{"role": "user", "content": "just typed text"}]
+
+    def test_chatgpt_style_no_attachment_key_no_regression(self) -> None:
+        """FR-007 / SC-003: a conversational message with no `attachments` key
+        in metadata (the ChatGPT shape, where pasted text is already inline)
+        produces output identical to its typed content alone."""
+        from echomine import Message as EMessage
+
+        m = EMessage(
+            id="m",
+            content="ChatGPT-style typed body with an inline paste embedded.",
+            role="user",
+            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+            parent_id=None,
+            metadata={"content_type_category": "conversational"},
+        )
+        assert _to_role_content([m]) == [
+            {
+                "role": "user",
+                "content": "ChatGPT-style typed body with an inline paste embedded.",
+            }
+        ]
+
+
+class TestAttachmentFixtureEndToEnd:
+    """Spec 003 e2e: `extract_conversation` on the attachment-bearing Claude
+    fixture conversation surfaces both pasted text and uploaded-document text
+    in the resulting `ChatTranscript` (US1 independent test)."""
+
+    FIXTURE_CONV_ID = "d3a7c4e1-spec3-4e88-9aff-spec003fixture04"
+
+    def test_extract_includes_pasted_text_and_named_attachment(self) -> None:
+        transcript = extract_conversation(CLAUDE_AI, self.FIXTURE_CONV_ID)
+        # Two paired exchanges: attachment-only -> assistant, then mixed -> assistant.
+        assert len(transcript.exchanges) == 2
+
+        joined_user = "\n".join(ex.user_message.content for ex in transcript.exchanges)
+
+        # Attachment-only message contributes its extracted text + "pasted text" header.
+        assert "PASTED_LOG_BODY: request_count=42; errors=3" in joined_user
+        assert "pasted text" in joined_user
+
+        # Mixed message contributes BOTH typed text and named-attachment text +
+        # filename header (FR-003, FR-008).
+        assert "Here is the doc, what do you think?" in joined_user
+        assert "DOC_BODY: Q3 revenue up 12 percent." in joined_user
+        assert "file: report.pdf" in joined_user
+
+
+class TestRenderAttachments:
+    """Direct unit tests for the `_render_attachments` helper."""
+
+    @staticmethod
+    def _msg(attachments: list[dict[str, object]] | None) -> object:
+        from echomine import Message as EMessage
+
+        meta: dict[str, object] = {}
+        if attachments is not None:
+            meta["attachments"] = attachments
+        return EMessage(
+            id="m",
+            content="x",
+            role="user",
+            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+            parent_id=None,
+            metadata=meta,
+        )
+
+    def test_returns_empty_when_no_attachments_key(self) -> None:
+        assert _render_attachments(self._msg(None)) == ""
+
+    def test_returns_empty_when_attachments_list_is_empty(self) -> None:
+        assert _render_attachments(self._msg([])) == ""
+
+    def test_returns_empty_when_only_empty_extracted_content(self) -> None:
+        assert _render_attachments(self._msg([{"file_name": "x", "extracted_content": ""}])) == ""
+
+    def test_block_format_for_unnamed_paste(self) -> None:
+        out = _render_attachments(self._msg([{"file_name": "", "extracted_content": "HELLO"}]))
+        assert out == (
+            "--- Attached/pasted content (pasted text) ---\nHELLO\n--- End attached content ---"
+        )
+
+    def test_block_format_for_named_attachment(self) -> None:
+        out = _render_attachments(
+            self._msg([{"file_name": "notes.md", "extracted_content": "BODY"}])
+        )
+        assert out == (
+            "--- Attached/pasted content (file: notes.md) ---\nBODY\n--- End attached content ---"
+        )
 
 
 # ===========================================================================

@@ -4,7 +4,10 @@
     "name": "Speed of light, deeper dive",
     "created_at": "2026-04-12T14:33:00Z",
     "updated_at": "2026-04-12T15:02:00Z",
-    "future_metadata": {"unknown": "value", "for": "FR-021 silent-ignore test"},
+    "future_metadata": {
+      "unknown": "value",
+      "for": "FR-021 silent-ignore test"
+    },
     "experimental_tag": "extras_at_top_level_should_be_ignored_per_FR021",
     "chat_messages": [
       {
@@ -71,6 +74,59 @@
         "sender": "assistant",
         "text": "Wider aperture (smaller f-number) means shallower depth of field.",
         "created_at": "2026-04-08T22:02:00Z"
+      }
+    ]
+  },
+  {
+    "uuid": "d3a7c4e1-spec3-4e88-9aff-spec003fixture04",
+    "name": "Pasted log analysis with attachments",
+    "created_at": "2026-04-05T10:00:00Z",
+    "updated_at": "2026-04-05T10:15:00Z",
+    "chat_messages": [
+      {
+        "uuid": "msg-20",
+        "sender": "human",
+        "created_at": "2026-04-05T10:00:00Z",
+        "attachments": [
+          {
+            "file_name": "",
+            "file_type": "txt",
+            "file_size": 47,
+            "extracted_content": "PASTED_LOG_BODY: request_count=42; errors=3"
+          }
+        ]
+      },
+      {
+        "uuid": "msg-21",
+        "sender": "assistant",
+        "text": "Three errors out of forty-two is a 7 percent failure rate.",
+        "created_at": "2026-04-05T10:05:00Z"
+      },
+      {
+        "uuid": "msg-22",
+        "sender": "human",
+        "text": "Here is the doc, what do you think?",
+        "created_at": "2026-04-05T10:10:00Z",
+        "attachments": [
+          {
+            "file_name": "report.pdf",
+            "file_type": "pdf",
+            "file_size": 32,
+            "extracted_content": "DOC_BODY: Q3 revenue up 12 percent."
+          }
+        ],
+        "content": [
+          {
+            "type": "text",
+            "text": "Here is the doc, what do you think?"
+          }
+        ]
+      },
+      {
+        "uuid": "msg-23",
+        "sender": "assistant",
+        "text": "Twelve percent is solid growth.",
+        "created_at": "2026-04-05T10:15:00Z"
       }
     ]
   }

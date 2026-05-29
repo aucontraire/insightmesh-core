@@ -28,6 +28,16 @@ A JSON array of message objects:
 
 Each pair of consecutive user/assistant messages is one "exchange". The full transcript is provided to you in a single invocation — process it holistically, not exchange-by-exchange. Topic boundary detection is YOUR judgment call; do not split by message count or arbitrary length.
 
+A message's `content` may contain one or more delimited blocks of user-provided source material (text the user pasted in or extracted from a document they attached). These blocks are demarcated as:
+
+```
+--- Attached/pasted content (file: report.pdf) ---
+<body>
+--- End attached content ---
+```
+
+The header reads `file: <name>` for a named upload and `pasted text` for an unnamed paste. Treat the body as user-provided source material (not the assistant's words). The delimiter markers are internal — never reproduce them in your output.
+
 ## Output
 
 Return a JSON object matching this schema:
@@ -55,6 +65,7 @@ Return a JSON object matching this schema:
 5. **Tags.** 2-5 tags per draft, lowercase, hyphen-separated for multi-word (e.g., `physics`, `electromagnetism`, `optical-engineering`). Include the broad domain plus specific concepts.
 6. **Ambiguity flag.** If a group of exchanges doesn't form a coherent topic, still create a draft but set `tentative_title` to `"[REVIEW] <best-guess topic>"` and add a `> [!warning]` callout at the top of `draft_content` explaining the ambiguity.
 7. **Preserve source URLs.** If the source conversation contains URLs (links the user or assistant referenced), carry them into `draft_content` as inline markdown links — `[descriptive text](https://...)` — attached to the relevant claim, tool, or source. Only preserve links that actually appeared in the transcript; never fabricate, guess, or "helpfully" add URLs that were not in the source.
+8. **Attached and pasted content is user-provided source material.** Delimited blocks introduced by `--- Attached/pasted content (...) ---` are text the user pasted or attached, not the assistant's words. Synthesize their substance into the relevant page; do NOT quote a large block verbatim. SHOULD attribute by filename when one is present (for example, "According to the attached `report.pdf`, ..." or an inline named reference). Weight attachment content by editorial judgment so a large attachment does not dominate the page relative to the conversational framing. Never emit the delimiter markers in your output, and never invent a filename that did not appear in the source.
 
 ## What You Do NOT Do
 
