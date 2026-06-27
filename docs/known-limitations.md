@@ -36,14 +36,11 @@ Every run calls Claude API multiple times. There's no caching across runs. A 200
 
 ### ~~Long chats hit per-agent token limits~~ — RESOLVED in Spec 004
 
-Long conversations used to risk overflowing the model's context window mid-run; an interrupted run was wasted work with no resume path. Spec 004 added checkpointed synthesis with wiki-as-carry-over:
+Long conversations used to risk overflowing the model's context window mid-run; an interrupted run was wasted work with no resume path. Spec 004 added checkpointed synthesis with wiki-as-carry-over: long transcripts are processed in linear forward checkpoints, a per-conversation cursor lets re-runs auto-resume, and wiki pages from prior checkpoints carry forward as compact context to subsequent ones via a topics-covered digest.
 
-- A long transcript is processed in linear forward **checkpoints** (default target: ~50% of the model's context window per checkpoint).
-- After each successful checkpoint, a per-conversation **cursor** is persisted at `logs/{stem}[__{conversation_id}].checkpoint.json`. Re-running the same command continues from where it left off automatically.
-- Wiki pages produced in prior checkpoints become carry-over context for the next checkpoint via a compact topics-covered digest from Historian (no full prior-page bodies in Synthesis input).
-- New CLI flags: `--resume` (explicit-intent resume; errors if no cursor exists), `--max-exchanges N` (per-invocation soft cap for pacing), `--force-resume` (override transcript-hash mismatch), `--retry` (acknowledge and resume past a recorded failure).
-- Re-processing a finished conversation: delete the cursor file and run again.
-- Non-linear slicing (range start/end, fractional ranges, branching) is explicitly NOT supported — linear forward order is a structural invariant for wiki coherence.
+See [How-to: Long conversations](how-to/long-conversations.md) for the full workflow (resume, pace, recover, re-process) and the [CLI reference](reference/cli.md) for the new flags (`--resume`, `--max-exchanges`, `--force-resume`, `--retry`).
+
+Non-linear slicing (range start/end, fractional ranges, branching) is explicitly NOT supported — linear forward order is a structural invariant for wiki coherence.
 
 ---
 

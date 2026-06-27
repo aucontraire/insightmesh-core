@@ -10,8 +10,8 @@ hide:
 
 InsightMesh turns your AI chat history into a **growing wiki you actually own**. Local-first, cross-linked, transparent about what it knows.
 
-!!! tip "Spec 002: full Claude.ai / ChatGPT export support"
-    `insightmesh list <export.json>` browses conversations in a Claude.ai or ChatGPT data export; `insightmesh batch <export.json> --conversation <id-or-index> --vault <path>` synthesizes the one you pick. The Spec 001 flat `{role, content}` transcript path is preserved unchanged (FR-014 backward compat). Powered by the [`echomine`](https://pypi.org/project/echomine/) library.
+!!! tip "Latest: Spec 004 — long-chat checkpointing (v0.4.0)"
+    Long conversations are now processed in linear forward checkpoints with auto-resume. A per-conversation cursor lets re-runs pick up where they left off; wiki pages from prior checkpoints carry forward as compact context. New flags: `--resume`, `--max-exchanges N`, `--force-resume`, `--retry`. See [How-to: Long conversations](how-to/long-conversations.md). Prior milestones still apply: Spec 002 (`insightmesh list` + `--conversation`, Claude.ai / ChatGPT export support via [`echomine`](https://pypi.org/project/echomine/)) and Spec 003 (attachment + pasted-text synthesis from Claude exports).
 
 ---
 
@@ -77,6 +77,8 @@ Phase B will eventually migrate orchestration to LangGraph for deterministic exe
 | Same-topic update detection | :material-check: |
 | Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | :material-check: Spec 002 — working |
 | Pre-flight validation (vault + agent presence checks) | :material-check: Spec 002 — working |
+| Attachment and pasted-text synthesis (Claude exports) | :material-check: Spec 003 — working |
+| Long-chat checkpointing + auto-resume + per-invocation cap | :material-check: Spec 004 — working |
 | Live inquiry (ask questions, refine, synthesize) | :material-clock-outline: planned |
-| Bias/assumption checking (Critic agent) | :material-clock-outline: Spec 003 — planned |
-| Web research (Researcher agent) | :material-clock-outline: Spec 003 — planned |
+| Bias/assumption checking (Critic agent) | :material-clock-outline: planned |
+| Web research (Researcher agent) | :material-clock-outline: planned |
