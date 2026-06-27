@@ -118,21 +118,34 @@ def pick_checkpoint_slice(
     exchanges: list[Exchange],
     start_index: int,
     token_budget: int,
+    max_count: int | None = None,
 ) -> list[Exchange]:
     """Greedy walk forward from `start_index`, packing exchanges until adding
-    the next would exceed `token_budget` (estimated via char/`_CHARS_PER_TOKEN`).
+    the next would exceed `token_budget` (estimated via char/`_CHARS_PER_TOKEN`)
+    OR the slice reaches `max_count` exchanges (when set).
 
-    Always returns at least one exchange when `start_index` is in range, even
-    if that exchange alone exceeds the budget — better to oversize one
-    checkpoint than to deadlock the loop. Returns an empty list when
-    `start_index >= len(exchanges)` (terminal condition for the loop).
+    `max_count` is the per-invocation cap remainder (FR-009): the orchestrator
+    computes `max_exchanges - processed_count` and passes it here so the slice
+    cannot exceed the user's `--max-exchanges N` request, even when token
+    budget would allow a larger slice. This is what makes the cap actually
+    fire on small conversations that fit entirely in one token-budget-sized
+    checkpoint. Without this, `--max-exchanges 3` is ignored on a 7-exchange
+    chat because one checkpoint covers all 7 and the between-checkpoint cap
+    check never gets a chance to fire.
 
-    Verifies FR-015 at the unit level (T021): for any (exchanges, budget), the
+    Always returns at least one exchange when `start_index` is in range and
+    `max_count` is not 0, even if that exchange alone exceeds the budget —
+    better to oversize one checkpoint than to deadlock the loop. Returns an
+    empty list when `start_index >= len(exchanges)` or `max_count <= 0`.
+
+    Verifies FR-015 at the unit level: for any (exchanges, budget), the
     returned slice's rendered char-count is at most `token_budget * _CHARS_PER_TOKEN`
     UNLESS the slice contains exactly one too-large exchange (the "at least one"
-    guarantee).
+    guarantee). With `max_count` set, slice length is at most `max_count`.
     """
     if start_index < 0 or start_index >= len(exchanges):
+        return []
+    if max_count is not None and max_count <= 0:
         return []
 
     budget_chars = int(token_budget * _CHARS_PER_TOKEN)
@@ -143,6 +156,8 @@ def pick_checkpoint_slice(
         ex = exchanges[i]
         ex_chars = _estimate_exchange_chars(ex)
         if selected and (char_count + ex_chars > budget_chars):
+            break
+        if max_count is not None and len(selected) >= max_count:
             break
         selected.append(ex)
         char_count += ex_chars
@@ -686,7 +701,18 @@ async def run_batch(
     last_editor_output: EditorOutput | None = None
 
     while start_index < len(transcript.exchanges):
-        slice_exchanges = pick_checkpoint_slice(transcript.exchanges, start_index, budget)
+        # FR-009: the cap constrains slice size AND between-checkpoint progression.
+        # Without per-slice constraint, a small transcript fitting in one
+        # token-budget-sized checkpoint would ignore the cap entirely.
+        remaining_cap: int | None = None
+        if max_exchanges is not None:
+            remaining_cap = max_exchanges - processed_count
+            if remaining_cap <= 0:
+                break
+
+        slice_exchanges = pick_checkpoint_slice(
+            transcript.exchanges, start_index, budget, max_count=remaining_cap
+        )
         if not slice_exchanges:
             break
 

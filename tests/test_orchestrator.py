@@ -1038,6 +1038,48 @@ class TestPickCheckpointSlice:
         # When budget is huge, packs through end.
         assert result[-1].index == 9
 
+    def test_max_count_caps_slice_size(self) -> None:
+        """FR-009 (post-fix): max_count limits slice length even when token
+        budget would allow more. Regression for the bug observed on 2026-06-27
+        where --max-exchanges 3 was ignored on a 7-exchange transcript because
+        the whole thing fit in one default-budget checkpoint."""
+        exchanges = [_make_exchange(i, content_chars=50) for i in range(10)]
+        # Huge budget would otherwise pack all 10.
+        result = pick_checkpoint_slice(exchanges, start_index=0, token_budget=10_000, max_count=3)
+        assert len(result) == 3
+        assert [ex.index for ex in result] == [0, 1, 2]
+
+    def test_max_count_zero_returns_empty(self) -> None:
+        exchanges = [_make_exchange(i) for i in range(3)]
+        assert pick_checkpoint_slice(exchanges, 0, token_budget=10_000, max_count=0) == []
+
+    def test_max_count_negative_returns_empty(self) -> None:
+        exchanges = [_make_exchange(i) for i in range(3)]
+        assert pick_checkpoint_slice(exchanges, 0, token_budget=10_000, max_count=-1) == []
+
+    def test_max_count_none_unrestricted(self) -> None:
+        """Default behavior unchanged when max_count is None."""
+        exchanges = [_make_exchange(i, content_chars=50) for i in range(5)]
+        result = pick_checkpoint_slice(
+            exchanges, start_index=0, token_budget=10_000, max_count=None
+        )
+        assert len(result) == 5
+
+    def test_max_count_tighter_than_budget_wins(self) -> None:
+        """When max_count is smaller than what budget allows, max_count wins."""
+        exchanges = [_make_exchange(i, content_chars=50) for i in range(10)]
+        result = pick_checkpoint_slice(exchanges, start_index=0, token_budget=10_000, max_count=2)
+        assert len(result) == 2
+
+    def test_budget_tighter_than_max_count_wins(self) -> None:
+        """When budget is tighter than max_count, budget wins (slice is smaller)."""
+        # 5 exchanges of ~80 chars each = ~400 chars total; budget 50 tokens
+        # = 175 chars → only ~2 exchanges fit. max_count=10 allows more but
+        # the budget constraint fires first.
+        exchanges = [_make_exchange(i, content_chars=80) for i in range(5)]
+        result = pick_checkpoint_slice(exchanges, start_index=0, token_budget=50, max_count=10)
+        assert len(result) <= 3  # budget-constrained, not 10
+
 
 # ===========================================================================
 # Failure path — orchestrator persists failed cursor on agent error
@@ -1265,3 +1307,106 @@ class TestRunBatchSoftCap:
         for call in recorder.calls:
             for idx in call["exchange_indices"]:
                 assert idx > 2
+
+    @pytest.mark.asyncio
+    async def test_g_cap_fires_when_transcript_fits_in_one_checkpoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression for the 2026-06-27 real-data bug.
+
+        On 21cbd714 (7 exchanges, default 100K-token budget), `--max-exchanges 3`
+        was ignored: the entire 7-exchange transcript fit in one checkpoint, so
+        the between-checkpoint cap check ran once AFTER all 7 exchanges had
+        already been processed. Cursor came back with status=complete and
+        last_processed_exchange_index=6.
+
+        The fix constrains pick_checkpoint_slice's slice size by the remaining
+        cap, so a 7-exchange transcript with cap=3 produces a 3-exchange slice
+        regardless of how generous the token budget is.
+        """
+        from src.checkpoint import load_checkpoint
+
+        recorder = _PipelineRecorder()
+        monkeypatch.setattr("src.orchestrator._execute_pipeline", recorder.fake_execute)
+
+        # Small transcript, HUGE budget — would otherwise fit entirely in one
+        # checkpoint and the cap would be a no-op.
+        transcript = _make_transcript(n_exchanges=7, exchange_chars=100)
+        cursor_path = tmp_path / "test.checkpoint.json"
+
+        await run_batch(
+            transcript=transcript,
+            vault_path=tmp_path,
+            logs_dir=None,
+            checkpoint_path=cursor_path,
+            max_exchanges=3,
+            token_budget=100_000,  # default-sized; would fit all 7 unconstrained
+        )
+
+        cursor = load_checkpoint(cursor_path)
+        assert cursor is not None
+        # Critical assertions: cap MUST have fired.
+        assert cursor.status == "interrupted", (
+            f"Expected status=interrupted (cap fired), got {cursor.status}. "
+            f"This is the 2026-06-27 regression scenario."
+        )
+        # Per SC-006 (post-fix): cursor advances by exactly N.
+        assert cursor.last_processed_exchange_index == 2  # 0, 1, 2 = 3 exchanges
+        # Only one checkpoint should have run, with exactly 3 exchanges.
+        assert len(recorder.calls) == 1
+        assert recorder.calls[0]["n_exchanges"] == 3
+        assert recorder.calls[0]["exchange_indices"] == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_h_capped_then_resume_completes_correctly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two-step real-world workflow: cap interrupts at 3, resume completes
+        the remaining 4. Validates the full --max-exchanges → resume cycle
+        that exercises the digest carry-over path."""
+        from src.checkpoint import load_checkpoint
+
+        recorder = _PipelineRecorder()
+        monkeypatch.setattr("src.orchestrator._execute_pipeline", recorder.fake_execute)
+
+        transcript = _make_transcript(n_exchanges=7, exchange_chars=100)
+        cursor_path = tmp_path / "test.checkpoint.json"
+
+        # Step 1: capped run.
+        await run_batch(
+            transcript=transcript,
+            vault_path=tmp_path,
+            logs_dir=None,
+            checkpoint_path=cursor_path,
+            max_exchanges=3,
+            token_budget=100_000,
+        )
+        cursor1 = load_checkpoint(cursor_path)
+        assert cursor1 is not None
+        assert cursor1.status == "interrupted"
+        assert cursor1.last_processed_exchange_index == 2
+        assert len(cursor1.topics_covered_digest) > 0
+        digest_after_step1 = len(cursor1.topics_covered_digest)
+
+        # Step 2: default resume to completion.
+        await run_batch(
+            transcript=transcript,
+            vault_path=tmp_path,
+            logs_dir=None,
+            checkpoint_path=cursor_path,
+            token_budget=100_000,
+        )
+        cursor2 = load_checkpoint(cursor_path)
+        assert cursor2 is not None
+        assert cursor2.status == "complete"
+        assert cursor2.last_processed_exchange_index == 6  # end of 7
+        # Digest grew with step-2 entries (didn't shrink, didn't reset).
+        assert len(cursor2.topics_covered_digest) > digest_after_step1
+        # Step 2's checkpoint should have received the digest from step 1.
+        # The fake_execute records what topics_covered_digest it was passed.
+        step2_call = recorder.calls[-1]
+        assert step2_call["topics_covered_digest"] is not None
+        assert len(step2_call["topics_covered_digest"]) == digest_after_step1
+        # And only processed unprocessed exchanges (3, 4, 5, 6).
+        for idx in step2_call["exchange_indices"]:
+            assert idx > 2
