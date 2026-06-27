@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.checkpoint import DigestEntry
 from src.wiki import WikiPageDraft, WikiPageResult
 
 
@@ -59,11 +60,21 @@ class SynthesisOutput(BaseModel):
 
 
 class HistorianOutput(BaseModel):
-    """The Historian agent's structured output."""
+    """The Historian agent's structured output.
+
+    `topics_covered_increment` (Spec 004 FR-011) is emitted alongside the
+    augmented drafts: one entry per draft with the draft's title plus a
+    one-line gist. The orchestrator accumulates these into the per-conversation
+    checkpoint cursor so future checkpoints' Synthesis input can include the
+    accumulated digest. `None` means "field not emitted" (pre-Spec-004 outputs);
+    an empty list means "no entries this checkpoint." Both result in nothing to
+    merge.
+    """
 
     model_config = ConfigDict(strict=True)
 
     augmented_drafts: list[WikiPageDraft]
+    topics_covered_increment: list[DigestEntry] | None = None
 
 
 class EditorOutput(BaseModel):

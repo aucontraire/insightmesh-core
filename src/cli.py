@@ -26,6 +26,13 @@ import typer
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.checkpoint import (
+    CheckpointHashMismatch,
+    CheckpointIndexOutOfBounds,
+    CheckpointMalformed,
+    CheckpointMissing,
+    CheckpointSchemaVersionMismatch,
+)
 from src.exports import (
     EmptyConversationError,
     UnrecognizedExportFormat,
@@ -33,7 +40,12 @@ from src.exports import (
     list_conversations,
     render_list_table,
 )
-from src.orchestrator import EXPECTED_AGENTS, run_batch
+from src.orchestrator import (
+    EXPECTED_AGENTS,
+    CheckpointError_RequiresRetry,
+    _cursor_path_for,
+    run_batch,
+)
 from src.transcript import parse_transcript
 
 app = typer.Typer(
@@ -302,7 +314,17 @@ def list_cmd(
 # ===========================================================================
 
 
-async def _run_pipeline(transcript_path: Path, vault: Path, logs_dir: Path) -> int:
+async def _run_pipeline(
+    transcript_path: Path,
+    vault: Path,
+    logs_dir: Path,
+    *,
+    checkpoint_path: Path | None = None,
+    max_exchanges: int | None = None,
+    require_resume: bool = False,
+    force_resume: bool = False,
+    retry: bool = False,
+) -> int:
     """Async pipeline driver for flat-array transcripts (Spec 001 path)."""
     try:
         transcript = parse_transcript(transcript_path)
@@ -316,14 +338,42 @@ async def _run_pipeline(transcript_path: Path, vault: Path, logs_dir: Path) -> i
     typer.echo(f"Loaded {len(transcript.exchanges)} exchanges from {transcript_path}", err=True)
     typer.echo(f"Vault: {vault}", err=True)
     typer.echo(f"Logs:  {logs_dir}", err=True)
+    if checkpoint_path is not None:
+        typer.echo(f"Cursor: {checkpoint_path}", err=True)
     typer.echo("Running pipeline...", err=True)
 
     try:
-        result = await run_batch(transcript=transcript, vault_path=vault, logs_dir=logs_dir)
+        result = await run_batch(
+            transcript=transcript,
+            vault_path=vault,
+            logs_dir=logs_dir,
+            checkpoint_path=checkpoint_path,
+            conversation_id=None,
+            max_exchanges=max_exchanges,
+            require_resume=require_resume,
+            force_resume=force_resume,
+            retry=retry,
+        )
+    except (
+        CheckpointMissing,
+        CheckpointHashMismatch,
+        CheckpointIndexOutOfBounds,
+        CheckpointMalformed,
+        CheckpointSchemaVersionMismatch,
+    ) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        return 2
+    except CheckpointError_RequiresRetry:
+        # Diagnostic already printed to stderr by orchestrator.
+        return 1
     except RuntimeError as exc:
         typer.echo(f"error: pipeline failed: {exc}", err=True)
         typer.echo(f"(session log written to {logs_dir})", err=True)
         return 1
+
+    if result is None:
+        # No-op (status=complete). Message already printed by orchestrator.
+        return 0
 
     created = sum(1 for r in result.results if r.action == "created")
     updated = sum(1 for r in result.results if r.action == "updated")
@@ -335,7 +385,16 @@ async def _run_pipeline(transcript_path: Path, vault: Path, logs_dir: Path) -> i
 
 
 async def _run_pipeline_from_export(
-    export_path: Path, selector: str, vault: Path, logs_dir: Path
+    export_path: Path,
+    selector: str,
+    vault: Path,
+    logs_dir: Path,
+    *,
+    checkpoint_path: Path | None = None,
+    max_exchanges: int | None = None,
+    require_resume: bool = False,
+    force_resume: bool = False,
+    retry: bool = False,
 ) -> int:
     """Async pipeline driver for multi-conversation exports (Spec 002 path)."""
     try:
@@ -357,14 +416,40 @@ async def _run_pipeline_from_export(
     typer.echo(f"Loaded {len(transcript.exchanges)} exchanges from {export_path}", err=True)
     typer.echo(f"Vault: {vault}", err=True)
     typer.echo(f"Logs:  {logs_dir}", err=True)
+    if checkpoint_path is not None:
+        typer.echo(f"Cursor: {checkpoint_path}", err=True)
     typer.echo("Running pipeline...", err=True)
 
     try:
-        result = await run_batch(transcript=transcript, vault_path=vault, logs_dir=logs_dir)
+        result = await run_batch(
+            transcript=transcript,
+            vault_path=vault,
+            logs_dir=logs_dir,
+            checkpoint_path=checkpoint_path,
+            conversation_id=selector,
+            max_exchanges=max_exchanges,
+            require_resume=require_resume,
+            force_resume=force_resume,
+            retry=retry,
+        )
+    except (
+        CheckpointMissing,
+        CheckpointHashMismatch,
+        CheckpointIndexOutOfBounds,
+        CheckpointMalformed,
+        CheckpointSchemaVersionMismatch,
+    ) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        return 2
+    except CheckpointError_RequiresRetry:
+        return 1
     except RuntimeError as exc:
         typer.echo(f"error: pipeline failed: {exc}", err=True)
         typer.echo(f"(session log written to {logs_dir})", err=True)
         return 1
+
+    if result is None:
+        return 0
 
     created = sum(1 for r in result.results if r.action == "created")
     updated = sum(1 for r in result.results if r.action == "updated")
@@ -409,8 +494,60 @@ def batch(
             ),
         ),
     ] = None,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume",
+            help=(
+                "Explicit-intent flag for resuming a prior checkpoint. Errors if no "
+                "cursor exists for this conversation. Without this flag, the orchestrator "
+                "still auto-resumes from any cursor it finds (Spec 004 FR-003 / FR-010)."
+            ),
+        ),
+    ] = False,
+    max_exchanges: Annotated[
+        int | None,
+        typer.Option(
+            "--max-exchanges",
+            help=(
+                "Soft cap on exchanges processed this invocation (Spec 004 FR-009). "
+                "Cap is checked between checkpoints; the cursor may advance past N by "
+                "up to one checkpoint's worth of exchanges. Must be > 0."
+            ),
+        ),
+    ] = None,
+    force_resume: Annotated[
+        bool,
+        typer.Option(
+            "--force-resume",
+            help=(
+                "Override for transcript-hash mismatch (Spec 004 FR-006). Use only when "
+                "you know the transcript changed and you accept that prior cursor indices "
+                "may now point at different exchanges."
+            ),
+        ),
+    ] = False,
+    retry: Annotated[
+        bool,
+        typer.Option(
+            "--retry",
+            help=(
+                "Required to resume past a cursor with status=failed (Spec 004 FR-014). "
+                "Acknowledges the prior failure and runs a fresh checkpoint attempt from "
+                "the cursor position."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Process a chat transcript or one conversation from an export into Obsidian wiki pages."""
+    # FR-008: reject non-positive caps before any pre-flight or agent work.
+    if max_exchanges is not None and max_exchanges <= 0:
+        typer.echo(
+            f"error: --max-exchanges must be > 0 (got {max_exchanges})",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
     vault_resolved = vault.expanduser().resolve()
 
     # Pre-flight pass: aggregate vault + agent checks before any export parsing
@@ -451,12 +588,36 @@ def batch(
         )
         raise typer.Exit(code=1)
 
+    # Spec 004 FR-005: derive the per-conversation cursor path under logs/.
+    checkpoint_path = _cursor_path_for(logs_dir, transcript_resolved, conversation)
+
     if is_flat:
-        exit_code = asyncio.run(_run_pipeline(transcript_resolved, vault_resolved, logs_dir))
+        exit_code = asyncio.run(
+            _run_pipeline(
+                transcript_resolved,
+                vault_resolved,
+                logs_dir,
+                checkpoint_path=checkpoint_path,
+                max_exchanges=max_exchanges,
+                require_resume=resume,
+                force_resume=force_resume,
+                retry=retry,
+            )
+        )
     else:
         assert conversation is not None  # narrowed by above checks
         exit_code = asyncio.run(
-            _run_pipeline_from_export(transcript_resolved, conversation, vault_resolved, logs_dir)
+            _run_pipeline_from_export(
+                transcript_resolved,
+                conversation,
+                vault_resolved,
+                logs_dir,
+                checkpoint_path=checkpoint_path,
+                max_exchanges=max_exchanges,
+                require_resume=resume,
+                force_resume=force_resume,
+                retry=retry,
+            )
         )
 
     if exit_code != 0:

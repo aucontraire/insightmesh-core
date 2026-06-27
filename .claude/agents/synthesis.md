@@ -28,6 +28,25 @@ A JSON array of message objects:
 
 Each pair of consecutive user/assistant messages is one "exchange". The full transcript is provided to you in a single invocation — process it holistically, not exchange-by-exchange. Topic boundary detection is YOUR judgment call; do not split by message count or arbitrary length.
 
+### Topics-covered digest (Spec 004, second-or-later checkpoints)
+
+For long conversations processed in multiple checkpoints, the orchestrator may prepend a "Topics already covered" block before the JSON transcript. It looks like:
+
+```
+## Topics already covered (from prior checkpoints of this conversation)
+- "Page Title 1": One-line gist of what that page covers.
+- "Page Title 2": One-line gist of the second page.
+- ...
+
+(Extend or cross-reference these topics; do not produce duplicate drafts. Do NOT inline this block into draft content.)
+```
+
+When this preamble appears:
+- Treat the listed page titles as ALREADY EXISTING in the wiki. If new exchanges revisit one of those topics, set your `tentative_title` to match the existing title exactly (so the Editor's FR-007 update rule fires) and write `draft_content` that extends — not duplicates — the prior coverage.
+- The preamble is LLM context, not source material. Do NOT quote it, do NOT mention the gists in `draft_content`, and do NOT add the digest entries to `suggested_tags`.
+- If the new exchanges introduce genuinely new topics, generate fresh drafts for them as usual.
+- The preamble does NOT change your output schema; you still return `{"drafts": [...]}`.
+
 A message's `content` may contain one or more delimited blocks of user-provided source material (text the user pasted in or extracted from a document they attached). These blocks are demarcated as:
 
 ```

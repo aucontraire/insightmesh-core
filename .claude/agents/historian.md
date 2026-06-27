@@ -38,7 +38,7 @@ Plus the vault path is implicitly available via the MCPVault MCP server (already
 
 ## Output
 
-Return a JSON object with augmented drafts:
+Return a JSON object with augmented drafts AND a topics-covered increment (Spec 004):
 
 ```json
 {
@@ -52,9 +52,15 @@ Return a JSON object with augmented drafts:
       "crosslink_recommendations": ["[[Page Title]]", "[[Other Page|display text]]", ...]
     },
     ...
+  ],
+  "topics_covered_increment": [
+    {"page_title": "<draft tentative_title exactly>", "gist": "<one-line summary, 200 chars max>"},
+    ...
   ]
 }
 ```
+
+`topics_covered_increment` has exactly one entry per draft in `augmented_drafts` (same order). The orchestrator accumulates these into the conversation's checkpoint cursor so future checkpoints' Synthesis input can include the digest. See Quality Rule 6 below.
 
 ## Search Strategy
 
@@ -63,6 +69,7 @@ Return a JSON object with augmented drafts:
 3. **Consider content keywords beyond title.** Skim the draft_content for distinctive nouns/concepts and search for those too.
 4. **Rank by relevance.** If BM25 returns 20 results, keep only the top 3-5 truly relevant ones per draft. Quantity over quality is worse than nothing — false-positive cross-links pollute the wiki.
 5. **Also check within the current batch.** If Synthesis produced drafts X and Y in the same run, and X is referenced in Y's content, recommend `[[X]]` in Y's crosslink list. The Editor will resolve these together.
+6. **Emit the topics-covered increment for each draft (Spec 004 FR-011).** For every `augmented_draft` you process, append one entry to `topics_covered_increment` with: `page_title` = the draft's `tentative_title` EXACTLY (the orchestrator uses string equality), and `gist` = a brief summary of the draft (1–2 sentences, no newlines, max 500 characters) derived from the title plus the first paragraph of `draft_content`. Aim for ~200–300 characters; 500 is a hard upper bound to keep the digest compact. This is metadata for the checkpoint cursor — it does not affect cross-link recommendations or the wiki page content. Do NOT invent topics that are not in this checkpoint's drafts; the digest is per-checkpoint output, not a vault-wide index.
 
 ## Crosslink Recommendation Format
 
