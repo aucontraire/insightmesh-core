@@ -371,7 +371,7 @@ wheels = [
 
 [[package]]
 name = "echomine"
-version = "1.4.0"
+version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ijson" },
@@ -382,9 +382,9 @@ dependencies = [
     { name = "structlog" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/07/6f4fd80a8ff52e819973ac982bf8675acc32d2a7ea2e1de7961e19fb889d/echomine-1.4.0.tar.gz", hash = "sha256:bf7e5bcca9c9049d3e6ae0d27ac2435cf3e7dba60f4162bfda2ddd74eccf227b", size = 104606, upload-time = "2026-05-27T18:47:13.301Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4d/b6/8bd7978265f2659629f1c315ed99b761752bc3605ec7140135ec4d2c8a2f/echomine-1.5.0.tar.gz", hash = "sha256:acf43e8115908bd50420e8dd72a9c426449982797152e9f34e6e13be990eaa53", size = 104952, upload-time = "2026-06-27T23:10:35.869Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/66/72f72e00880bbd2ce6397cf44f0ba93ef2c08440afe7c332c471d101055e/echomine-1.4.0-py3-none-any.whl", hash = "sha256:84fd9a9e2239b557d9a4a4c7cbcf0908ff9b381b1535ca0d46c667ef1c0d58f3", size = 121878, upload-time = "2026-05-27T18:47:11.833Z" },
+    { url = "https://files.pythonhosted.org/packages/85/4e/4473299d03a9cb377224975387271e5153ab390880149a3cfe93f3451cac/echomine-1.5.0-py3-none-any.whl", hash = "sha256:e290b71c6a22f66d3d7d1218a046bb0e97bab02a0ff879c65b2d015b8b9f6e27", size = 122188, upload-time = "2026-06-27T23:10:34.34Z" },
 ]
 
 [[package]]
@@ -559,7 +559,7 @@ docs = [
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0" },
     { name = "claude-agent-sdk" },
-    { name = "echomine", specifier = ">=1.4.0,<2.0.0" },
+    { name = "echomine", specifier = ">=1.5.0,<2.0.0" },
     { name = "mkdocs", marker = "extra == 'dev'", specifier = "<2.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = "<2.0" },
     { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.5" },
