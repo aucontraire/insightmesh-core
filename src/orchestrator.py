@@ -288,27 +288,67 @@ def _extract_text_content(content: str | list[dict[str, Any]] | None) -> str:
 
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*\n?(.+?)\n?```", re.DOTALL)
 
+_PERSISTED_PATH_RE = re.compile(r"Full output saved to:\s*(\S+)")
+
+
+def _unwrap_persisted_output(raw: str) -> str:
+    """Unwrap Claude Code SDK's `<persisted-output>` envelope when present.
+
+    When a tool result exceeds ~50KB, the SDK wraps it in
+    `[{"type": "text", "text": "<full content>"}]` and writes the full output
+    to a sidecar JSON file under `~/.claude/projects/<session>/tool-results/`.
+    The orchestrator receives a short preview with the file path.
+
+    Without unwrapping, the preview's leading `[` defeats `_try_extract_json`:
+    it decodes the envelope-array as JSON and Pydantic validation fails because
+    the shape is `[{type, text}]`, not the expected `SynthesisOutput` /
+    `HistorianOutput` / `EditorOutput`.
+
+    Returns the concatenated `text` field(s) from the sidecar when the envelope
+    is detected and readable, or `raw` unchanged otherwise. Failures (missing
+    file, unparseable sidecar, unexpected shape) fall back to `raw` so the
+    downstream extraction can still attempt the preview.
+    """
+    if "<persisted-output>" not in raw:
+        return raw
+    match = _PERSISTED_PATH_RE.search(raw)
+    if not match:
+        return raw
+    persist_path = Path(match.group(1))
+    try:
+        wrapped = json.loads(persist_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return raw
+    if not isinstance(wrapped, list):
+        return raw
+    parts = [str(item.get("text", "")) for item in wrapped if isinstance(item, dict)]
+    return "\n".join(parts) if parts else raw
+
 
 def _try_extract_json(raw: str) -> str:
     """Pull a JSON object out of mixed agent output.
 
-    Agents return clean JSON most of the time, but two real-world conditions
-    break naive extraction, sometimes together:
+    Agents return clean JSON most of the time, but real-world conditions
+    break naive extraction:
 
     - The SDK can append trailing metadata after the JSON (an `agentId:`
       resumption line and a `<usage>` block), so the response no longer ends
       with `}`.
     - The agent's own `draft_content` can contain fenced code blocks or braces
       (e.g., a markdown drum-tab pattern), which fools fence/brace heuristics.
+    - The SDK wraps tool results > ~50KB in a `<persisted-output>` envelope
+      (a JSON array of `{type, text}` blocks) and writes the full output to a
+      sidecar file. `_unwrap_persisted_output` handles this; see its docstring.
 
-    The robust strategy is to locate the first `{` and let a real JSON parser
-    (`json.JSONDecoder().raw_decode`) consume exactly one JSON value, ignoring
-    everything after it and tolerating braces/fences inside string values.
-    Fence and greedy-brace heuristics are kept only as fallbacks.
+    The robust strategy after unwrapping: locate the first `{` and let a real
+    JSON parser (`json.JSONDecoder().raw_decode`) consume exactly one JSON
+    value, ignoring everything after it and tolerating braces/fences inside
+    string values. Fence and greedy-brace heuristics are kept only as fallbacks.
 
     Returns the best-guess JSON string; downstream parsing decides if it's
     actually valid.
     """
+    raw = _unwrap_persisted_output(raw)
     stripped = raw.strip()
     start = stripped.find("{")
     if start != -1:
@@ -830,16 +870,34 @@ def _build_session_log(
 
 
 def _finalize_result(agent_calls: dict[str, _AgentCall]) -> EditorOutput:
-    """Apply FR-013 failure semantics to the captured agent calls and return EditorOutput.
+    """Decide pipeline outcome from the captured agent calls and return EditorOutput.
 
-    Distinguishes non-recoverable failures (Synthesis, Editor total failure)
-    from recoverable ones (Historian skipped — pipeline still produces output;
-    per-page Editor skips are handled inside EditorOutput.decisions).
+    The orchestrator-as-meta-agent pattern (Spec 001-003) means upstream agent
+    output flows through TWO parsers: the meta-agent's lenient JSON-string-level
+    interpretation, and this Python orchestrator's strict Pydantic validation.
+    When they disagree (e.g., the meta-agent successfully passed Synthesis's
+    wrapped output to Editor, but my parser couldn't unwrap it for the session
+    log), the real signal of pipeline success is Editor's output — not whether
+    each upstream agent's response happened to be parseable on my side.
+
+    Revised after 2026-06-27 real-data smoke (Spec 004 findings, Bug 3):
+    Editor's parsed_output is the source of truth. If Editor produced a valid
+    EditorOutput, the pipeline succeeded regardless of upstream parse errors.
+    Only walk upstream when Editor itself never ran or failed — those are the
+    cases where something genuinely blocked the pipeline.
+
+    See `project_spec004_findings.md` for the failure pattern that motivated
+    this relaxation.
     """
-    synthesis_call = _first_call(agent_calls, "synthesis")
-    historian_call = _first_call(agent_calls, "historian")
     editor_call = _first_call(agent_calls, "editor")
 
+    if editor_call is not None and isinstance(editor_call.parsed_output, EditorOutput):
+        # Pipeline succeeded end-to-end. Upstream per-agent parse errors (if any)
+        # are recorded in the session log but do not override Editor's success.
+        return editor_call.parsed_output
+
+    # Editor was missing or unusable — diagnose what blocked the pipeline.
+    synthesis_call = _first_call(agent_calls, "synthesis")
     if synthesis_call is None:
         raise RuntimeError(
             "Synthesis agent was never invoked — orchestrator did not follow the pipeline"
@@ -849,9 +907,6 @@ def _finalize_result(agent_calls: dict[str, _AgentCall]) -> EditorOutput:
             f"Synthesis agent failed (non-recoverable per FR-013): {synthesis_call.error}"
         )
 
-    if historian_call is not None and historian_call.error:
-        pass
-
     if editor_call is None:
         raise RuntimeError(
             "Editor agent was not invoked even though Synthesis succeeded — "
@@ -859,6 +914,4 @@ def _finalize_result(agent_calls: dict[str, _AgentCall]) -> EditorOutput:
         )
     if editor_call.error:
         raise RuntimeError(f"Editor agent failed (non-recoverable per FR-013): {editor_call.error}")
-    if not isinstance(editor_call.parsed_output, EditorOutput):
-        raise RuntimeError("Editor agent output could not be parsed as EditorOutput")
-    return editor_call.parsed_output
+    raise RuntimeError("Editor agent output could not be parsed as EditorOutput")

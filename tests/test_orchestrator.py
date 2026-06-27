@@ -131,6 +131,217 @@ class TestParseAgentOutputRegression:
         assert "```" in result.drafts[0].draft_content
 
 
+class TestUnwrapPersistedOutput:
+    """Bug 2 fix (Spec 004 findings): Claude Code SDK wraps tool results >~50KB
+    in a `<persisted-output>` envelope with the full content in a sidecar file.
+    Without unwrapping, `_try_extract_json` decodes the envelope-array instead
+    of the agent's actual JSON and downstream Pydantic validation fails.
+    """
+
+    def test_passthrough_when_no_envelope(self) -> None:
+        from src.orchestrator import _unwrap_persisted_output
+
+        raw = '{"drafts": [{"tentative_title": "X"}]}'
+        assert _unwrap_persisted_output(raw) == raw
+
+    def test_passthrough_when_no_path_found(self) -> None:
+        from src.orchestrator import _unwrap_persisted_output
+
+        # Envelope marker present but no "Full output saved to: <path>" line.
+        raw = "<persisted-output>\nsome other format\n</persisted-output>"
+        assert _unwrap_persisted_output(raw) == raw
+
+    def test_passthrough_when_sidecar_missing(self, tmp_path: Path) -> None:
+        from src.orchestrator import _unwrap_persisted_output
+
+        missing = tmp_path / "does-not-exist.json"
+        raw = (
+            f"<persisted-output>\n"
+            f"Output too large (60KB). Full output saved to: {missing}\n"
+            f"</persisted-output>"
+        )
+        # Should not raise; returns raw unchanged so downstream extraction can
+        # still attempt the preview content.
+        assert _unwrap_persisted_output(raw) == raw
+
+    def test_unwraps_real_envelope(self, tmp_path: Path) -> None:
+        """Simulates the exact shape produced by Claude Code's SDK on
+        large tool results: sidecar is a JSON array of {type, text} blocks."""
+        from src.orchestrator import _unwrap_persisted_output
+
+        sidecar = tmp_path / "toolu_abc.json"
+        sidecar.write_text(
+            json.dumps(
+                [
+                    {
+                        "type": "text",
+                        "text": '{"drafts": [{"tentative_title": "Big Topic"}]}',
+                    }
+                ]
+            )
+        )
+        raw = (
+            f"<persisted-output>\n"
+            f"Output too large (60KB). Full output saved to: {sidecar}\n"
+            f"</persisted-output>"
+        )
+        unwrapped = _unwrap_persisted_output(raw)
+        assert '"drafts"' in unwrapped
+        assert "Big Topic" in unwrapped
+
+    def test_concatenates_multiple_text_blocks(self, tmp_path: Path) -> None:
+        from src.orchestrator import _unwrap_persisted_output
+
+        sidecar = tmp_path / "toolu_multi.json"
+        sidecar.write_text(
+            json.dumps(
+                [
+                    {"type": "text", "text": "first half "},
+                    {"type": "text", "text": "second half"},
+                ]
+            )
+        )
+        raw = f"<persisted-output>\nFull output saved to: {sidecar}\n</persisted-output>"
+        unwrapped = _unwrap_persisted_output(raw)
+        assert "first half" in unwrapped
+        assert "second half" in unwrapped
+
+    def test_end_to_end_extract_through_envelope(self, tmp_path: Path) -> None:
+        """The whole chain: envelope wrapper → unwrap → extract JSON → parse.
+        Verifies the exact bug from the 2026-06-27 Synthesis failure is now
+        recovered cleanly."""
+        sidecar = tmp_path / "toolu_synth.json"
+        synthesis_payload = {
+            "drafts": [
+                {
+                    "tentative_title": "Capitalism's Origins",
+                    "exchange_indices": [0, 1],
+                    "draft_content": "## From Feudalism\n\nThe transition...",
+                    "suggested_tags": ["history", "capitalism"],
+                }
+            ]
+        }
+        sidecar.write_text(json.dumps([{"type": "text", "text": json.dumps(synthesis_payload)}]))
+        raw = (
+            f"<persisted-output>\n"
+            f"Output too large (69KB). Full output saved to: {sidecar}\n"
+            f"Preview (first 2KB):\n"
+            f'[\n  {{\n    "type": "text",\n    "text": "{{...truncated preview..."\n  }}\n]'
+        )
+        parsed = _parse_agent_output("synthesis", raw)
+        assert parsed is not None
+        assert len(parsed.drafts) == 1
+        assert parsed.drafts[0].tentative_title == "Capitalism's Origins"
+
+
+class TestFinalizeResultTrustsEditor:
+    """Bug 3 fix (Spec 004 findings): `_finalize_result` must trust Editor's
+    success as the signal of pipeline success, NOT the strict-Pydantic parse
+    success of each upstream agent. The orchestrator-Claude meta-agent is more
+    tolerant of envelope-wrapped output than my parser, so upstream parse
+    failures often coexist with Editor success."""
+
+    def _editor_call(self, parsed: EditorOutput | None, error: str | None = None) -> _AgentCall:
+        return _AgentCall(
+            tool_use_id="ed",
+            subagent_type="editor",
+            input_prompt="canned",
+            parsed_output=parsed,
+            error=error,
+            start_monotonic=0.0,
+            end_monotonic=0.01,
+        )
+
+    def _synthesis_call(self, error: str | None = None) -> _AgentCall:
+        return _AgentCall(
+            tool_use_id="syn",
+            subagent_type="synthesis",
+            input_prompt="canned",
+            parsed_output=None if error else SynthesisOutput(drafts=[]),
+            error=error,
+            start_monotonic=0.0,
+            end_monotonic=0.01,
+        )
+
+    def _valid_editor_output(self) -> EditorOutput:
+        return EditorOutput(results=[], decisions=[])
+
+    def test_editor_success_overrides_synthesis_parse_error(self) -> None:
+        """The 2026-06-27 51076657 scenario: Synthesis appeared 'errored' to my
+        parser (envelope wrap) but Editor still produced valid output. Must
+        return Editor's output, not raise."""
+        from src.orchestrator import _finalize_result
+
+        calls = {
+            "syn": self._synthesis_call(error="parse failure: envelope wrap"),
+            "ed": self._editor_call(self._valid_editor_output()),
+        }
+        result = _finalize_result(calls)
+        assert isinstance(result, EditorOutput)
+
+    def test_editor_success_overrides_missing_synthesis_parsed_output(self) -> None:
+        """Even with no synthesis_call.parsed_output, if Editor succeeded the
+        pipeline succeeded."""
+        from src.orchestrator import _finalize_result
+
+        syn = _AgentCall(
+            tool_use_id="syn",
+            subagent_type="synthesis",
+            input_prompt="canned",
+            parsed_output=None,
+            error=None,
+            start_monotonic=0.0,
+            end_monotonic=0.01,
+        )
+        calls = {"syn": syn, "ed": self._editor_call(self._valid_editor_output())}
+        result = _finalize_result(calls)
+        assert isinstance(result, EditorOutput)
+
+    def test_editor_missing_raises_with_synthesis_diagnosis(self) -> None:
+        """When Editor never ran AND Synthesis errored, surface the upstream cause."""
+        from src.orchestrator import _finalize_result
+
+        calls = {"syn": self._synthesis_call(error="real synthesis failure")}
+        with pytest.raises(RuntimeError, match="Synthesis agent failed"):
+            _finalize_result(calls)
+
+    def test_editor_missing_raises_when_synthesis_succeeded(self) -> None:
+        """Synthesis succeeded but Editor never ran — that's a real pipeline gap."""
+        from src.orchestrator import _finalize_result
+
+        calls = {"syn": self._synthesis_call()}  # no error
+        with pytest.raises(RuntimeError, match="Editor agent was not invoked"):
+            _finalize_result(calls)
+
+    def test_editor_error_raises(self) -> None:
+        """When Editor itself errored, that's the genuine non-recoverable case."""
+        from src.orchestrator import _finalize_result
+
+        calls = {
+            "syn": self._synthesis_call(),
+            "ed": self._editor_call(None, error="vault write denied"),
+        }
+        with pytest.raises(RuntimeError, match="Editor agent failed"):
+            _finalize_result(calls)
+
+    def test_editor_unparseable_raises(self) -> None:
+        """When Editor returned output but it didn't parse as EditorOutput."""
+        from src.orchestrator import _finalize_result
+
+        calls = {
+            "syn": self._synthesis_call(),
+            "ed": self._editor_call(parsed=None, error=None),
+        }
+        with pytest.raises(RuntimeError, match="could not be parsed as EditorOutput"):
+            _finalize_result(calls)
+
+    def test_no_agents_invoked_raises(self) -> None:
+        from src.orchestrator import _finalize_result
+
+        with pytest.raises(RuntimeError, match="Synthesis agent was never invoked"):
+            _finalize_result({})
+
+
 # ===========================================================================
 # Spec 004 fixtures and helpers
 # ===========================================================================
