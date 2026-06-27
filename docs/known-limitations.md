@@ -30,9 +30,20 @@ This is the honest list. Phase A (Spec 001) shipped a working pipeline, but seve
 
 ### Cost scales with conversation length
 
-Every run calls Claude API multiple times. There's no caching across runs. A 200-exchange chat costs ~$1-3 in API spend. A 500-exchange chat may hit per-agent token limits before completing.
+Every run calls Claude API multiple times. There's no caching across runs. A 200-exchange chat costs ~$1-3 in API spend.
 
-**How to mitigate today**: start with short conversations. Check the session log's `duration_seconds` field to calibrate expectations before running larger inputs.
+**How to mitigate today**: start with short conversations. Check the session log's `duration_seconds` field to calibrate expectations before running larger inputs. For very long conversations, use the checkpointing flags from Spec 004 (see below) to break the work into resumable chunks rather than running it all at once.
+
+### ~~Long chats hit per-agent token limits~~ — RESOLVED in Spec 004
+
+Long conversations used to risk overflowing the model's context window mid-run; an interrupted run was wasted work with no resume path. Spec 004 added checkpointed synthesis with wiki-as-carry-over:
+
+- A long transcript is processed in linear forward **checkpoints** (default target: ~50% of the model's context window per checkpoint).
+- After each successful checkpoint, a per-conversation **cursor** is persisted at `logs/{stem}[__{conversation_id}].checkpoint.json`. Re-running the same command continues from where it left off automatically.
+- Wiki pages produced in prior checkpoints become carry-over context for the next checkpoint via a compact topics-covered digest from Historian (no full prior-page bodies in Synthesis input).
+- New CLI flags: `--resume` (explicit-intent resume; errors if no cursor exists), `--max-exchanges N` (per-invocation soft cap for pacing), `--force-resume` (override transcript-hash mismatch), `--retry` (acknowledge and resume past a recorded failure).
+- Re-processing a finished conversation: delete the cursor file and run again.
+- Non-linear slicing (range start/end, fractional ranges, branching) is explicitly NOT supported — linear forward order is a structural invariant for wiki coherence.
 
 ---
 
