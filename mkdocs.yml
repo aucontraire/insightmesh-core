@@ -3,7 +3,7 @@ site_description: A cognitive knowledge engine that compounds understanding over
 site_url: https://aucontraire.github.io/insightmesh-core/
 repo_url: https://github.com/aucontraire/insightmesh-core
 repo_name: aucontraire/insightmesh-core
-edit_uri: edit/main/docs/
+edit_uri: edit/master/docs/
 
 theme:
   name: material
@@ -43,7 +43,13 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Known Limitations: known-limitations.md
+  - How-to:
+    - Long conversations: how-to/long-conversations.md
+    - Troubleshooting: how-to/troubleshooting.md
+  - Reference:
+    - CLI: reference/cli.md
+  - About:
+    - Known Limitations: known-limitations.md
 
 markdown_extensions:
   - admonition

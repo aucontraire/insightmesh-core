@@ -2,10 +2,13 @@
 
 > A cognitive knowledge engine that compounds understanding over time through multi-agent investigative inquiry, persisted as an evolving Obsidian wiki.
 
+[![Docs](https://img.shields.io/badge/docs-aucontraire.github.io-1976d2.svg)](https://aucontraire.github.io/insightmesh-core/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Types: mypy strict](https://img.shields.io/badge/types-mypy%20strict-blue)](https://mypy-lang.org/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+
+**📚 Docs: [aucontraire.github.io/insightmesh-core](https://aucontraire.github.io/insightmesh-core/)** — install walkthrough, how-to guides, CLI reference.
 
 InsightMesh turns your AI chat history into a **growing wiki you actually own**. Local-first, cross-linked, transparent about what it knows.
 
@@ -43,7 +46,9 @@ Pipeline complete: 3 created, 0 updated, 3 editor decisions logged.
 
 Three new wiki pages appear in `~/Obsidian/MyVault/InsightMesh/`, cross-linked via `[[wiki links]]`, with full session log in `.logs/`.
 
-> 🚀 **Spec 002 lands export support**: run `insightmesh list ~/Downloads/conversations.json` to browse a Claude.ai or ChatGPT data export, then `insightmesh batch <export.json> --conversation <id-or-index> --vault ~/Obsidian/MyVault` to synthesize the one you picked. The Spec 001 flat `{role, content}` transcript format is still supported unchanged (FR-014 backward compat).
+> 🚀 **Latest (v0.4.0)**: Spec 004 adds long-chat checkpointing with auto-resume — `--resume`, `--max-exchanges N`, `--force-resume`, `--retry`. See the [Long conversations how-to](https://aucontraire.github.io/insightmesh-core/how-to/long-conversations/).
+>
+> Prior milestones: Spec 002 added Claude.ai / ChatGPT export support (`insightmesh list <export.json>` + `--conversation <id-or-index>`); Spec 003 added attachment and pasted-text synthesis for Claude exports. The Spec 001 flat `{role, content}` transcript format is still supported unchanged (FR-014 backward compat).
 
 ## Getting started
 
@@ -81,14 +86,17 @@ Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deter
 
 | Feature | Status |
 |---------|--------|
-| Chat-to-wiki batch synthesis | ✅ Spec 001 — working |
+| Chat-to-wiki batch synthesis | ✅ Spec 001 |
 | Multi-page cross-linking | ✅ |
 | Session logging + decision rationale | ✅ |
 | Same-topic update detection | ✅ |
-| Multi-conversation export selection (pick a chat from a Claude.ai/ChatGPT export) | ✅ Spec 002 |
-| Live inquiry (ask questions, refine, synthesize) | 🟡 Spec 002 — planned |
-| Bias/assumption checking (Critic agent) | 🟡 Spec 003 — planned |
-| Web research (Researcher agent) | 🟡 Spec 003 — planned |
+| Multi-conversation export selection (Claude.ai / ChatGPT) | ✅ Spec 002 |
+| Pre-flight validation (vault + agent presence) | ✅ Spec 002 |
+| Attachment and pasted-text synthesis (Claude exports) | ✅ Spec 003 |
+| Long-chat checkpointing + auto-resume + per-invocation cap | ✅ Spec 004 |
+| Live inquiry (ask questions, refine, synthesize) | 🟡 planned |
+| Bias/assumption checking (Critic agent) | 🟡 planned |
+| Web research (Researcher agent) | 🟡 planned |
 
 See **[Known Limitations](docs/known-limitations.md)** for the honest list of what doesn't work yet.
 
@@ -96,8 +104,11 @@ See **[Known Limitations](docs/known-limitations.md)** for the honest list of wh
 
 **Published docs: [aucontraire.github.io/insightmesh-core](https://aucontraire.github.io/insightmesh-core/)**
 
-- **[Getting Started](docs/getting-started.md)** — install + first run walkthrough
-- **[Known Limitations](docs/known-limitations.md)** — what's not done, what's slow, what's planned
+- **[Getting Started](https://aucontraire.github.io/insightmesh-core/getting-started/)** — install + first-run walkthrough
+- **[How-to: Long conversations](https://aucontraire.github.io/insightmesh-core/how-to/long-conversations/)** — resume, pace, recover, re-process
+- **[How-to: Troubleshooting](https://aucontraire.github.io/insightmesh-core/how-to/troubleshooting/)** — install errors, hung pipelines, MCPVault crashes, agent parse failures
+- **[Reference: CLI](https://aucontraire.github.io/insightmesh-core/reference/cli/)** — every command, every flag, exit codes, cursor schema
+- **[Known Limitations](https://aucontraire.github.io/insightmesh-core/known-limitations/)** — what's not done, what's slow, what's planned
 
 Local docs preview: `uv run mkdocs serve`
 

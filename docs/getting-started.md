@@ -218,13 +218,7 @@ A JSON file like `2026-05-17T02:30:19Z-single_topic.json` should be there — fu
 
 ### If the smoke test fails
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `error: vault path does not exist` | Wrong path | Verify `~/Documents/InsightMesh-test-vault` exists |
-| Hangs > 10 minutes | Claude API rate-limited or hung | `Ctrl+C`, wait, retry |
-| `error: pipeline failed: Editor agent failed: Failed to parse...` | LLM returned prose instead of JSON | Usually transient — retry. If persistent, agent prompt may need tightening |
-| `mcpvault: ✗ Failed` in `claude mcp list` | npm cache cold or .mcp.json malformed | `npx -y @bitbonsai/mcpvault@latest --help` once, then re-check |
-| Synthesis returns "I don't see a transcript" | Agent file out of date | Restart Claude Code session so agent files reload |
+See [How-to: Troubleshooting](how-to/troubleshooting.md#smoke-test-fails) for the symptom → fix table.
 
 ---
 
@@ -280,7 +274,7 @@ uv run insightmesh batch ~/Downloads/my-conversation.json --vault ~/Documents/In
 | ~20 exchanges (smoke test fixture) | 3-5 min | a few cents |
 | ~50 exchanges | 5-10 min | ~10-25 cents |
 | ~200 exchanges | 15-30 min | ~$1-3 |
-| 500+ exchanges | may hit token limits — split into chunks |
+| 500+ exchanges | use checkpointing — see [How-to: Long conversations](how-to/long-conversations.md) |
 
 !!! warning "Cost is real"
     Every run calls Claude API multiple times. There's no free tier for the Agent SDK in 2026 — usage draws from your Claude plan's Agent SDK credits or pay-per-use. Budget accordingly.
@@ -313,48 +307,7 @@ After the run:
 
 ## Troubleshooting
 
-### `uv: command not found`
-
-Add uv to your shell PATH. The installer prints instructions; usually:
-
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-### `claude: command not found`
-
-Install Claude Code per [code.claude.com/docs](https://code.claude.com/docs).
-
-### `ModuleNotFoundError: No module named 'src'`
-
-You forgot `uv run` — running raw `python` or `pytest` won't use the project venv. Always prefix with `uv run`.
-
-### Pipeline hangs forever
-
-There's no built-in timeout on the LLM calls. If a run is silent for >10 minutes, `Ctrl+C` and inspect:
-
-```bash
-ps aux | grep -E "insightmesh|mcpvault|claude.*query"
-```
-
-Kill stale processes if needed:
-
-```bash
-pkill -f mcpvault
-```
-
-### MCPVault subprocess crashes
-
-Cold-start `npx` issues are the most common cause. Run once to warm the cache:
-
-```bash
-npx -y @bitbonsai/mcpvault@latest --help
-```
-
-### "Editor agent failed: Failed to parse editor output"
-
-The LLM returned prose instead of pure JSON. Usually transient — retry. The full raw response is saved to `.specify/scratch/agent_responses/` for diagnosis.
+See [How-to: Troubleshooting](how-to/troubleshooting.md) for problem-solving recipes — install errors, hung pipelines, MCPVault crashes, agent parse failures, cursor states, and more.
 
 ### Need more help
 
