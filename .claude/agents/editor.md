@@ -149,6 +149,7 @@ The `decisions` array MUST have one entry per draft processed (FR-014) — this 
 - Do not create pages outside the vault directory
 - Do not delete existing pages
 - Do not silently overwrite user-authored content — preserve it explicitly when updating
+- Do not emit a `provenance:` block in the page frontmatter. Per Spec 005 FR-017, the orchestrator owns that block and merges it cumulatively after you return. If you see a `provenance:` block on an existing page being updated, leave it untouched in your output; the orchestrator will overwrite it with the merged value. Your contract (action, confidence, rationale, exchange_indices, signals) is the input to that merge; never duplicate it into the frontmatter yourself.
 
 ## Return Format — CRITICAL
 

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "checkpoint_id": "cp-001",
+  "checkpoint_number": 1,
+  "timestamp": "2026-06-28T12:00:00Z",
+  "conversation": {
+    "id": "d126dc13-ab72-4657-939d-b1d1ecc0fd33",
+    "export_path": "/Users/example/Downloads/conversations.json",
+    "provider": "anthropic",
+    "models_used": [],
+    "transcript_hash": "e9806c5ea0e9a392b826296db93a3b6192366e067716cf462fd80666ed3ba1c9"
+  },
+  "exchanges": [
+    {
+      "index": 0,
+      "user_message_id": "msg-uuu-0001",
+      "assistant_message_id": "msg-aaa-0001"
+    },
+    {
+      "index": 1,
+      "user_message_id": "msg-uuu-0002",
+      "assistant_message_id": "msg-aaa-0002"
+    }
+  ],
+  "editor": {
+    "decisions": [
+      {
+        "file": "Capitalism's Origins.md",
+        "action": "updated",
+        "confidence": "high",
+        "rationale": "Title and 4 tags overlapped with existing page; extended with new framework material from this checkpoint.",
+        "exchange_indices": [0, 1],
+        "signals": {
+          "normalized_title_match": true,
+          "tag_overlap_count": 4,
+          "tag_overlap_tags": ["history", "economics", "political-theory", "capitalism"],
+          "content_keyword_overlap": "strong"
+        }
+      }
+    ]
+  },
+  "results": {
+    "pages_created": [],
+    "pages_updated": ["Capitalism's Origins.md"],
+    "pages_skipped": []
+  },
+  "links": {
+    "session_log": "InsightMesh/.logs/2026-06-28T12-00-00Z-conversations.json",
+    "cursor": "InsightMesh/.logs/conversations__d126dc13-ab72-4657-939d-b1d1ecc0fd33.checkpoint.json"
+  },
+  "future_top_level_field": "tolerated_by_CheckpointRecordRead",
+  "future_metadata_block": {
+    "added_in_some_future_version": true,
+    "purpose": "demonstrates additive forward-compatibility per FR-002"
+  }
+}
