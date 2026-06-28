@@ -526,6 +526,21 @@ def _sanitize_conversation_subdir(conv_id: str | None) -> str:
     return conv_id.replace("/", "-").replace(":", "-")
 
 
+def _normalize_vault_relative_path(path: str) -> str:
+    """Ensure a page path is vault-root-relative INCLUDING the `InsightMesh/` prefix.
+
+    Per Spec 005 data-model.md, `EditorDecisionRecord.file` and the
+    `ResultsRecord.pages_*` entries are vault-root-relative POSIX paths
+    (e.g., `InsightMesh/Capitalism's Origins.md`). Editor may emit either a
+    bare filename or the prefixed form depending on how its prompt resolves
+    paths; this helper normalizes both into the canonical vault-relative
+    shape so downstream code can always do `vault_root / file` to resolve.
+    """
+    if path.startswith("InsightMesh/"):
+        return path
+    return f"InsightMesh/{path}"
+
+
 def _editor_decision_to_record(decision: EditorDecision) -> EditorDecisionRecord:
     """Project a Spec 001 EditorDecision into the Spec 005 EditorDecisionRecord.
 
@@ -533,12 +548,15 @@ def _editor_decision_to_record(decision: EditorDecision) -> EditorDecisionRecord
     path via the same `sanitize_filename` helper Editor uses for new pages.
     Updates and skips that point at an existing page use `candidate_existing_page`
     as-is; created pages and orphaned skips derive the filename from
-    `draft_title`.
+    `draft_title`. The final path is normalized to the canonical
+    vault-root-relative shape (`InsightMesh/<file>.md`) per Spec 005
+    data-model.md.
 
     `signals` is `EditorDecisionSignals.model_dump()` (typed model → dict) so
     the read-side stays opaque per FR-005.
     """
-    file_path = decision.candidate_existing_page or sanitize_filename(decision.draft_title)
+    base = decision.candidate_existing_page or sanitize_filename(decision.draft_title)
+    file_path = _normalize_vault_relative_path(base)
     return EditorDecisionRecord(
         file=file_path,
         action=decision.action,
@@ -635,8 +653,16 @@ def _write_provenance(
 
         exchange_records = _build_exchange_records(transcript, exchanges_processed)
         editor_decision_records = [_editor_decision_to_record(d) for d in editor_output.decisions]
-        pages_created = [r.file_path for r in editor_output.results if r.action == "created"]
-        pages_updated = [r.file_path for r in editor_output.results if r.action == "updated"]
+        pages_created = [
+            _normalize_vault_relative_path(r.file_path)
+            for r in editor_output.results
+            if r.action == "created"
+        ]
+        pages_updated = [
+            _normalize_vault_relative_path(r.file_path)
+            for r in editor_output.results
+            if r.action == "updated"
+        ]
         pages_skipped = [d.file for d in editor_decision_records if d.action == "skipped"]
 
         record = compute_checkpoint_payload(

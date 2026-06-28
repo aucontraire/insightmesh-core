@@ -445,11 +445,13 @@ def write_checkpoint_metadata(
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_name, target)
-    except Exception:
+    finally:
+        # Run cleanup unconditionally so KeyboardInterrupt / SystemExit also tidy up.
+        # After a successful os.replace, tmp_name no longer exists; the exists()
+        # check makes the cleanup a safe no-op on the happy path.
         if os.path.exists(tmp_name):
             with suppress(OSError):
                 os.unlink(tmp_name)
-        raise
     return target
 
 
@@ -632,11 +634,13 @@ def merge_page_provenance(
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_name, page_path)
-    except Exception:
+    finally:
+        # Run cleanup unconditionally so KeyboardInterrupt / SystemExit also tidy up.
+        # After a successful os.replace, tmp_name no longer exists; the exists()
+        # check makes the cleanup a safe no-op on the happy path.
         if os.path.exists(tmp_name):
             with suppress(OSError):
                 os.unlink(tmp_name)
-        raise
     return page_path
 
 
