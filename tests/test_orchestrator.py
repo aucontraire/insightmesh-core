@@ -16,6 +16,8 @@ outputs without invoking the real Claude SDK.
 from __future__ import annotations
 
 import json
+import shutil as _shutil
+import subprocess as _subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,7 @@ from src.history import (
     CheckpointRecord,
     EditorDecisionRecord,
     ExchangeRecord,
+    ShadowRepoCommitFailed,
 )
 from src.logger import (
     EditorDecision,
@@ -2103,3 +2106,461 @@ class TestProvenanceProcessKillResilience:
         # No orphan .tmp files left over.
         tmp_files = list(cp_dir.glob(".cp-001.*.tmp"))
         assert not tmp_files, f"orphan tmp files after re-run: {tmp_files}"
+
+
+# ============================================================================
+# Spec 005 T018: US2 integration tests for the shadow git layer
+# ============================================================================
+
+
+skip_if_no_git = pytest.mark.skipif(
+    _shutil.which("git") is None, reason="git not installed; US2 needs git on PATH"
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_git_cache() -> Any:
+    """Reset the module-scope git-availability cache between US2 tests."""
+    import src.history as _hist
+
+    _hist._GIT_AVAILABLE_CACHE = None
+    yield
+    _hist._GIT_AVAILABLE_CACHE = None
+
+
+def _run_provenance_for_us2(
+    *,
+    vault: Path,
+    page_filenames: list[str],
+    conv_id: str = "conv-us2-001",
+    checkpoint_number: int = 1,
+    extra_exchange_indices: list[int] | None = None,
+) -> None:
+    """Convenience: build inputs and call _write_provenance for US2 scenarios."""
+    transcript = _build_test_transcript(conv_id=conv_id, n_exchanges=2)
+    editor_output = _build_editor_output(
+        pages_updated=page_filenames,
+        exchange_indices=extra_exchange_indices or [0, 1],
+    )
+    _write_provenance(
+        vault_root=vault,
+        transcript=transcript,
+        conversation_id=conv_id,
+        transcript_hash="x" * 64,
+        exchanges_processed=transcript.exchanges,
+        editor_output=editor_output,
+        session_log_path=None,
+        cursor_path=vault / "cursor.json",
+        checkpoint_number=checkpoint_number,
+    )
+
+
+def _git_log_oneline(history_dir: Path) -> list[str]:
+    """Capture git log --oneline output as a list of subject lines."""
+    result = _subprocess.run(
+        ["git", "-C", str(history_dir), "log", "--oneline"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in result.stdout.strip().split("\n") if line]
+
+
+def _git_show_message(history_dir: Path, rev: str = "HEAD") -> str:
+    """Capture full commit message body for one rev."""
+    result = _subprocess.run(
+        ["git", "-C", str(history_dir), "log", "-1", "--pretty=%B", rev],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+
+class TestUS2SingleCheckpointCommit:
+    """Subtest T018(a): one checkpoint → one git commit with FR-014 subject + body."""
+
+    @skip_if_no_git
+    def test_single_commit_lands_with_correct_format(self, tmp_path: Path) -> None:
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+        _make_page(im, "PageB.md")
+        _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md", "PageB.md"])
+
+        history_dir = im / ".history"
+        assert (history_dir / ".git").exists()
+        log = _git_log_oneline(history_dir)
+        assert len(log) == 1, f"expected exactly 1 commit, got {log}"
+        msg = _git_show_message(history_dir)
+        assert "[InsightMesh checkpoint:cp-001 conversation:conv-us2-001]" in msg
+        assert "Metadata: checkpoints/conv-us2-001/cp-001.json" in msg
+        assert "Pages touched:" in msg
+        assert "(updated, confidence:medium)" in msg
+        assert "InsightMesh/PageA.md" in msg
+
+
+class TestUS2TwoCheckpointDiffHistory:
+    """Subtest T018(b): two checkpoints → two commits + per-page diff."""
+
+    @skip_if_no_git
+    def test_two_checkpoints_produce_diffable_history(self, tmp_path: Path) -> None:
+        vault, im = _make_vault(tmp_path)
+        page = _make_page(im, "PageA.md", body="# v1\n\nInitial content.\n")
+        _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"], checkpoint_number=1)
+        # Mutate page between checkpoints to simulate Editor updating it.
+        page.write_text(page.read_text() + "\n\nAdded by checkpoint 2.\n", encoding="utf-8")
+        _run_provenance_for_us2(
+            vault=vault,
+            page_filenames=["PageA.md"],
+            checkpoint_number=2,
+            extra_exchange_indices=[1],
+        )
+
+        history_dir = im / ".history"
+        log = _git_log_oneline(history_dir)
+        assert len(log) == 2, f"expected 2 commits, got {log}"
+        assert any("cp-001" in line for line in log)
+        assert any("cp-002" in line for line in log)
+
+        diff = _subprocess.run(
+            ["git", "-C", str(history_dir), "log", "-p", "pages/PageA.md"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "+Added by checkpoint 2." in diff.stdout, "FR-014: per-page diff missing"
+
+
+class TestUS2InitIdempotency:
+    """Subtest T018(c) + (d): FR-012 three-state init behavior."""
+
+    @skip_if_no_git
+    def test_existing_git_repo_is_not_reinitialized(self, tmp_path: Path) -> None:
+        # State (b): .history/.git/ exists already.
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+        history_dir = im / ".history"
+        history_dir.mkdir(parents=True)
+        _subprocess.run(["git", "-C", str(history_dir), "init"], capture_output=True, check=True)
+        # Marker file that should survive a re-init no-op.
+        marker = history_dir / ".git" / "marker"
+        marker.write_text("pre-existing")
+
+        _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"])
+
+        assert marker.read_text() == "pre-existing", "init was not idempotent"
+        log = _git_log_oneline(history_dir)
+        assert len(log) == 1
+
+    @skip_if_no_git
+    def test_history_dir_exists_but_no_git_gets_initialized(self, tmp_path: Path) -> None:
+        # State (c): .history/ exists with content but no .git/.
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+        history_dir = im / ".history"
+        history_dir.mkdir(parents=True)
+        pre_existing = history_dir / "leftover.txt"
+        pre_existing.write_text("not from InsightMesh")
+
+        _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"])
+
+        assert (history_dir / ".git").exists(), "init did not re-initialize"
+        assert pre_existing.read_text() == "not from InsightMesh", "init was destructive"
+        log = _git_log_oneline(history_dir)
+        assert len(log) == 1
+
+
+class TestUS2NoGitFallback:
+    """Subtest T018(e): FR-015 SC-005 — git uninstalled → exit 0, JSON + frontmatter still land."""
+
+    def test_no_git_writes_json_and_frontmatter_no_commit(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+
+        with patch("src.orchestrator.is_git_available", return_value=False):
+            _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"])
+
+        # JSON + frontmatter still landed
+        cp = im / ".history" / "checkpoints" / "conv-us2-001" / "cp-001.json"
+        assert cp.exists()
+        fm = _read_frontmatter(im / "PageA.md")
+        assert "provenance" in fm
+        # No commit — .git/ should not exist
+        assert not (im / ".history" / ".git").exists()
+        captured = capsys.readouterr()
+        assert "[provenance] git not on PATH" in captured.err
+
+
+class TestUS2CommitFailureFallback:
+    """Subtest T018(f): FR-016 — commit failure logs + run continues; next commit sweeps up."""
+
+    @skip_if_no_git
+    def test_commit_failure_logs_and_next_commit_sweeps(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+
+        with patch("src.orchestrator.commit_checkpoint") as mock_commit:
+            mock_commit.side_effect = ShadowRepoCommitFailed("permission denied")
+            _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"], checkpoint_number=1)
+
+        captured = capsys.readouterr()
+        assert "[provenance] commit failed" in captured.err
+        # JSON + frontmatter still on disk
+        cp1 = im / ".history" / "checkpoints" / "conv-us2-001" / "cp-001.json"
+        assert cp1.exists()
+        fm = _read_frontmatter(im / "PageA.md")
+        assert "provenance" in fm
+
+        # Second checkpoint succeeds and sweeps up the orphan snapshot.
+        _make_page(im, "PageB.md")
+        _run_provenance_for_us2(
+            vault=vault,
+            page_filenames=["PageA.md", "PageB.md"],
+            checkpoint_number=2,
+        )
+        history_dir = im / ".history"
+        log = _git_log_oneline(history_dir)
+        # Only one commit (the second); first was the failed-commit fallback.
+        assert len(log) == 1
+        # The sweep-up commit includes both cp-001 and cp-002 + both page snapshots.
+        result = _subprocess.run(
+            ["git", "-C", str(history_dir), "show", "--name-only", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "cp-001.json" in result.stdout or "cp-002.json" in result.stdout
+
+
+class TestUS2EmptyCheckpointNoCommit:
+    """Subtest T018(g): Research Decision R10 — empty checkpoint skips init + commit."""
+
+    def test_empty_checkpoint_no_history_dir(self, tmp_path: Path) -> None:
+        vault, im = _make_vault(tmp_path)
+        transcript = _build_test_transcript(n_exchanges=1)
+        editor_output = EditorOutput(results=[], decisions=[])
+        _write_provenance(
+            vault_root=vault,
+            transcript=transcript,
+            conversation_id="conv-us2-001",
+            transcript_hash="x" * 64,
+            exchanges_processed=transcript.exchanges,
+            editor_output=editor_output,
+            session_log_path=None,
+            cursor_path=vault / "cursor.json",
+            checkpoint_number=1,
+        )
+        # JSON DID write per US1 contract
+        cp = im / ".history" / "checkpoints" / "conv-us2-001" / "cp-001.json"
+        assert cp.exists()
+        # No git work attempted: no .git/ directory + no pages/ directory
+        assert not (im / ".history" / ".git").exists()
+        assert not (im / ".history" / "pages").exists()
+
+
+class TestUS2UserModifiedHistoryNonDestructive:
+    """Subtest T018(h): edge case — user manual commits in .history/ coexist."""
+
+    @skip_if_no_git
+    def test_user_commit_survives_orchestrator_run(self, tmp_path: Path) -> None:
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+        history_dir = im / ".history"
+        history_dir.mkdir(parents=True)
+        _subprocess.run(["git", "-C", str(history_dir), "init"], capture_output=True, check=True)
+        # User manual commit with their own identity.
+        user_file = history_dir / "user_notes.txt"
+        user_file.write_text("manual user note")
+        _subprocess.run(
+            [
+                "git",
+                "-C",
+                str(history_dir),
+                "-c",
+                "user.email=user@example.com",
+                "-c",
+                "user.name=TestUser",
+                "add",
+                "user_notes.txt",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        _subprocess.run(
+            [
+                "git",
+                "-C",
+                str(history_dir),
+                "-c",
+                "user.email=user@example.com",
+                "-c",
+                "user.name=TestUser",
+                "commit",
+                "-m",
+                "user manual commit",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        user_commit_sha = _subprocess.run(
+            ["git", "-C", str(history_dir), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"])
+
+        log = _git_log_oneline(history_dir)
+        assert len(log) == 2, f"expected user commit + InsightMesh commit, got {log}"
+        # User's commit still present
+        result = _subprocess.run(
+            ["git", "-C", str(history_dir), "cat-file", "-e", user_commit_sha],
+            capture_output=True,
+        )
+        assert result.returncode == 0, "user commit was destroyed"
+        assert user_file.read_text() == "manual user note"
+
+
+class TestUS2VaultWithPopulatedHistory:
+    """Subtest T018(i): SC-004 — populated .history/ advances cleanly."""
+
+    @skip_if_no_git
+    def test_second_checkpoint_advances_numbering(self, tmp_path: Path) -> None:
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+        _run_provenance_for_us2(vault=vault, page_filenames=["PageA.md"], checkpoint_number=1)
+        # Second run with checkpoint_number=2.
+        _make_page(im, "PageB.md")
+        _run_provenance_for_us2(
+            vault=vault,
+            page_filenames=["PageA.md", "PageB.md"],
+            checkpoint_number=2,
+        )
+        cp_dir = im / ".history" / "checkpoints" / "conv-us2-001"
+        cp1 = cp_dir / "cp-001.json"
+        cp2 = cp_dir / "cp-002.json"
+        assert cp1.exists()
+        assert cp2.exists()
+        # Two commits, monotonic order.
+        log = _git_log_oneline(im / ".history")
+        assert len(log) == 2
+        # Newest first
+        assert "cp-002" in log[0]
+        assert "cp-001" in log[1]
+
+
+class TestUS2CommitMessageFormat:
+    """Subtest T018(j): FR-014 commit message format unit test."""
+
+    @skip_if_no_git
+    def test_commit_subject_and_body_match_fr014(self, tmp_path: Path) -> None:
+        from src.history import (
+            EditorBlock,
+        )
+        from src.history import (
+            commit_checkpoint as _commit_checkpoint,
+        )
+        from src.history import (
+            init_shadow_repo as _init_shadow_repo,
+        )
+        from src.history import (
+            write_checkpoint_metadata as _write_checkpoint_metadata,
+        )
+
+        history_dir = tmp_path / ".history"
+        _init_shadow_repo(history_dir)
+
+        record = CheckpointRecord(
+            checkpoint_id="cp-007",
+            checkpoint_number=7,
+            timestamp=datetime(2026, 6, 28, 12, 0, 0, tzinfo=UTC),
+            conversation=_minimal_conversation_for_us2(),
+            exchanges=[_minimal_exchange_for_us2(0)],
+            editor=EditorBlock(
+                decisions=[
+                    EditorDecisionRecord(
+                        file="InsightMesh/Page1.md",
+                        action="updated",
+                        confidence="high",
+                        rationale="r1",
+                        exchange_indices=[0],
+                        signals={},
+                    ),
+                    EditorDecisionRecord(
+                        file="InsightMesh/Page2.md",
+                        action="created",
+                        confidence="medium",
+                        rationale="r2",
+                        exchange_indices=[0],
+                        signals={},
+                    ),
+                ]
+            ),
+            results=_make_us2_results(
+                created=["InsightMesh/Page2.md"], updated=["InsightMesh/Page1.md"]
+            ),
+            links=_minimal_links_for_us2(),
+        )
+        _write_checkpoint_metadata(
+            history_dir=history_dir, conversation_subdir="conv-fmt", record=record
+        )
+        # Create snapshot files so git add can stage them.
+        (history_dir / "pages").mkdir(parents=True, exist_ok=True)
+        for slug in ["Page1.md", "Page2.md"]:
+            (history_dir / "pages" / slug).write_text(f"snapshot of {slug}")
+
+        _commit_checkpoint(
+            history_dir=history_dir,
+            checkpoint_id="cp-007",
+            conversation_id="conv-fmt",
+            conversation_subdir="conv-fmt",
+            decisions=record.editor.decisions,
+            pages_created=["InsightMesh/Page2.md"],
+            pages_updated=["InsightMesh/Page1.md"],
+            snapshot_filenames=["Page1.md", "Page2.md"],
+        )
+
+        msg = _git_show_message(history_dir)
+        # Subject
+        assert "[InsightMesh checkpoint:cp-007 conversation:conv-fmt]" in msg
+        assert "1 pages updated, 1 created" in msg
+        # Body
+        assert "Metadata: checkpoints/conv-fmt/cp-007.json" in msg
+        assert "Pages touched:" in msg
+        assert "InsightMesh/Page1.md (updated, confidence:high)" in msg
+        assert "InsightMesh/Page2.md (created, confidence:medium)" in msg
+
+
+def _minimal_conversation_for_us2() -> Any:
+    from src.history import ConversationRecord as _CR
+
+    return _CR(
+        id="conv-fmt",
+        export_path="/tmp/x.json",
+        provider="anthropic",
+        models_used=[],
+        transcript_hash="a" * 64,
+    )
+
+
+def _minimal_exchange_for_us2(index: int) -> Any:
+    return ExchangeRecord(
+        index=index, user_message_id=f"u-{index}", assistant_message_id=f"a-{index}"
+    )
+
+
+def _minimal_links_for_us2() -> Any:
+    from src.history import LinksRecord as _LR
+
+    return _LR(session_log=".logs/s.json", cursor=".logs/c.json")
+
+
+def _make_us2_results(*, created: list[str], updated: list[str]) -> Any:
+    from src.history import ResultsRecord as _RR
+
+    return _RR(pages_created=created, pages_updated=updated, pages_skipped=[])

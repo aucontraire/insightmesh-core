@@ -51,9 +51,15 @@ from src.history import (
     ExchangeRecord,
     FrontmatterParseFailed,
     ProvenanceFrontmatter,
+    ShadowRepoCommitFailed,
+    ShadowRepoUnavailable,
+    commit_checkpoint,
     compute_checkpoint_payload,
+    init_shadow_repo,
+    is_git_available,
     load_prior_exchange_indices,
     merge_page_provenance,
+    snapshot_page,
     write_checkpoint_metadata,
 )
 from src.logger import (
@@ -749,6 +755,69 @@ def _write_provenance(
                     file=sys.stderr,
                 )
                 continue
+
+        # FR-017 step 3: snapshot each touched page into .history/pages/<slug>.md.
+        # Per-page failure (page deleted between merge and snapshot) is isolated;
+        # other snapshots and the commit step proceed regardless.
+        snapshot_filenames: list[str] = []
+        for decision in editor_decision_records:
+            if decision.action == "skipped":
+                continue
+            page_file = decision.file
+            page_path = vault_root / page_file
+            slug = page_file.removeprefix("InsightMesh/")
+            try:
+                snapshot_page(
+                    source_page=page_path,
+                    history_dir=history_dir,
+                    sanitized_slug=slug,
+                )
+                snapshot_filenames.append(slug)
+            except FileNotFoundError:
+                print(
+                    f"[provenance] page disappeared before snapshot: {page_path}",
+                    file=sys.stderr,
+                )
+                continue
+            except OSError as exc:
+                print(
+                    f"[provenance] snapshot failed for {page_path}: {exc}",
+                    file=sys.stderr,
+                )
+                continue
+
+        # FR-017 step 4: initialize shadow repo (idempotent per FR-012)
+        # and commit. Per FR-015, missing git is a non-fatal fallback: log
+        # and return without commit; the JSON + frontmatter already landed.
+        if not is_git_available():
+            print(
+                "[provenance] git not on PATH; skipping shadow-repo commit",
+                file=sys.stderr,
+            )
+            return
+
+        try:
+            init_shadow_repo(history_dir)
+        except ShadowRepoUnavailable as exc:
+            print(
+                f"[provenance] shadow repo unavailable: {exc}",
+                file=sys.stderr,
+            )
+            return
+
+        try:
+            commit_checkpoint(
+                history_dir=history_dir,
+                checkpoint_id=record.checkpoint_id,
+                conversation_id=conversation_id,
+                conversation_subdir=conv_subdir,
+                decisions=editor_decision_records,
+                pages_created=pages_created,
+                pages_updated=pages_updated,
+                snapshot_filenames=snapshot_filenames,
+            )
+        except ShadowRepoCommitFailed as exc:
+            print(f"[provenance] commit failed: {exc}", file=sys.stderr)
 
     except Exception as exc:
         # FR-019: provenance failure MUST NOT propagate to fail the run.

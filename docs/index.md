@@ -79,6 +79,7 @@ Phase B will eventually migrate orchestration to LangGraph for deterministic exe
 | Pre-flight validation (vault + agent presence checks) | :material-check: Spec 002 — working |
 | Attachment and pasted-text synthesis (Claude exports) | :material-check: Spec 003 — working |
 | Long-chat checkpointing + auto-resume + per-invocation cap | :material-check: Spec 004 — working |
+| Per-page provenance (checkpoint JSON + frontmatter + shadow-git diff history) | :material-check: Spec 005 — working |
 | Live inquiry (ask questions, refine, synthesize) | :material-clock-outline: planned |
 | Bias/assumption checking (Critic agent) | :material-clock-outline: planned |
 | Web research (Researcher agent) | :material-clock-outline: planned |
