@@ -1618,6 +1618,76 @@ class TestProvenanceUS1EndToEnd:
         assert fm_b["provenance"]["latest_action"] == "updated"
 
 
+class TestProvenanceAbsolutePathNormalization:
+    """Regression for the 2026-06-28 real-data smoke finding (S1).
+
+    `WikiPageResult.file_path` from real MCPVault output is an ABSOLUTE
+    filesystem path, not a vault-relative one. `_normalize_vault_relative_path`
+    must strip the vault root prefix before prepending `InsightMesh/`,
+    otherwise the JSON `results.pages_created` / `pages_updated` end up like
+    `"InsightMesh//Users/me/Vault/InsightMesh/Page.md"` (double-prefix
+    + absolute path leak).
+    """
+
+    def test_absolute_page_path_normalizes_correctly(self, tmp_path: Path) -> None:
+        vault, im = _make_vault(tmp_path)
+        _make_page(im, "PageA.md")
+
+        transcript = _build_test_transcript(n_exchanges=1)
+        absolute_path = str(im / "PageA.md")
+        editor_output = EditorOutput(
+            results=[
+                WikiPageResult(
+                    file_path=absolute_path,
+                    action="created",
+                    final_frontmatter={},
+                    crosslinks_applied=[],
+                )
+            ],
+            decisions=[
+                EditorDecision(
+                    draft_title="PageA",
+                    action="created",
+                    candidate_existing_page=absolute_path,
+                    signals=EditorDecisionSignals(
+                        normalized_title_match=True,
+                        tag_overlap_count=0,
+                        tag_overlap_tags=[],
+                        content_keyword_overlap="weak",
+                    ),
+                    confidence="high",
+                    rationale="absolute-path created",
+                    exchange_indices=[0],
+                )
+            ],
+        )
+
+        _write_provenance(
+            vault_root=vault,
+            transcript=transcript,
+            conversation_id="conv-abs-001",
+            transcript_hash="x" * 64,
+            exchanges_processed=transcript.exchanges,
+            editor_output=editor_output,
+            session_log_path=None,
+            cursor_path=vault / "cursor.json",
+            checkpoint_number=1,
+        )
+
+        cp = im / ".history" / "checkpoints" / "conv-abs-001" / "cp-001.json"
+        record = CheckpointRecord.model_validate_json(cp.read_text())
+        # Both surfaces must show the normalized vault-relative path.
+        assert record.results.pages_created == ["InsightMesh/PageA.md"]
+        assert record.editor.decisions[0].file == "InsightMesh/PageA.md"
+        # Specifically: no double-prefix, no absolute path leak.
+        for p in record.results.pages_created + record.results.pages_updated:
+            assert not p.startswith("InsightMesh//"), f"double-prefix leak: {p}"
+            assert "/Users/" not in p, f"absolute path leak: {p}"
+        for d in record.editor.decisions:
+            assert not d.file.startswith("InsightMesh//"), f"double-prefix: {d.file}"
+            assert "/Users/" not in d.file, f"absolute path leak: {d.file}"
+
+
 class TestProvenanceCumulativeMerge:
     """Subtest T013(b): cumulative merge across two checkpoints (US1 AS-3, AS-5; SC-002)."""
 

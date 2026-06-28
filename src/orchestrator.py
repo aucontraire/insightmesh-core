@@ -22,6 +22,7 @@ import json
 import re
 import sys
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -532,22 +533,45 @@ def _sanitize_conversation_subdir(conv_id: str | None) -> str:
     return conv_id.replace("/", "-").replace(":", "-")
 
 
-def _normalize_vault_relative_path(path: str) -> str:
+def _normalize_vault_relative_path(path: str, vault_root: Path | None = None) -> str:
     """Ensure a page path is vault-root-relative INCLUDING the `InsightMesh/` prefix.
 
     Per Spec 005 data-model.md, `EditorDecisionRecord.file` and the
     `ResultsRecord.pages_*` entries are vault-root-relative POSIX paths
-    (e.g., `InsightMesh/Capitalism's Origins.md`). Editor may emit either a
-    bare filename or the prefixed form depending on how its prompt resolves
-    paths; this helper normalizes both into the canonical vault-relative
-    shape so downstream code can always do `vault_root / file` to resolve.
+    (e.g., `InsightMesh/Capitalism's Origins.md`). Editor / MCPVault may emit
+    any of three shapes; this helper normalizes all into the canonical
+    vault-relative form so downstream code can always do `vault_root / file`
+    to resolve.
+
+    Input shapes handled:
+      1. Already prefixed: `"InsightMesh/Page.md"` → unchanged
+      2. Bare filename: `"Page.md"` → `"InsightMesh/Page.md"`
+      3. Absolute filesystem path under the vault (e.g.,
+         `"/Users/me/Vault/InsightMesh/Page.md"`) when `vault_root` is provided:
+         the vault-root prefix is stripped and the rest is returned as a
+         POSIX vault-relative path. Real Editor output via MCPVault hits this
+         path (`WikiPageResult.file_path` is absolute).
+
+    When `vault_root` is None or the absolute path is outside the vault, the
+    path is treated as opaque and prefixed verbatim (defensive: produces
+    visibly-wrong output rather than silently-wrong output that downstream
+    diagnostics can spot).
     """
+    if vault_root is not None:
+        p = Path(path)
+        if p.is_absolute():
+            # Absolute path outside vault is left for defensive surface (visibly
+            # malformed downstream rather than silently wrong).
+            with suppress(ValueError):
+                path = p.relative_to(vault_root).as_posix()
     if path.startswith("InsightMesh/"):
         return path
     return f"InsightMesh/{path}"
 
 
-def _editor_decision_to_record(decision: EditorDecision) -> EditorDecisionRecord:
+def _editor_decision_to_record(
+    decision: EditorDecision, vault_root: Path | None = None
+) -> EditorDecisionRecord:
     """Project a Spec 001 EditorDecision into the Spec 005 EditorDecisionRecord.
 
     Maps `draft_title` + `candidate_existing_page` → final vault-relative file
@@ -556,13 +580,14 @@ def _editor_decision_to_record(decision: EditorDecision) -> EditorDecisionRecord
     as-is; created pages and orphaned skips derive the filename from
     `draft_title`. The final path is normalized to the canonical
     vault-root-relative shape (`InsightMesh/<file>.md`) per Spec 005
-    data-model.md.
+    data-model.md; absolute paths (which MCPVault returns for updates) get
+    stripped to vault-relative when `vault_root` is provided.
 
     `signals` is `EditorDecisionSignals.model_dump()` (typed model → dict) so
     the read-side stays opaque per FR-005.
     """
     base = decision.candidate_existing_page or sanitize_filename(decision.draft_title)
-    file_path = _normalize_vault_relative_path(base)
+    file_path = _normalize_vault_relative_path(base, vault_root=vault_root)
     return EditorDecisionRecord(
         file=file_path,
         action=decision.action,
@@ -658,14 +683,16 @@ def _write_provenance(
             models_used = []
 
         exchange_records = _build_exchange_records(transcript, exchanges_processed)
-        editor_decision_records = [_editor_decision_to_record(d) for d in editor_output.decisions]
+        editor_decision_records = [
+            _editor_decision_to_record(d, vault_root=vault_root) for d in editor_output.decisions
+        ]
         pages_created = [
-            _normalize_vault_relative_path(r.file_path)
+            _normalize_vault_relative_path(r.file_path, vault_root=vault_root)
             for r in editor_output.results
             if r.action == "created"
         ]
         pages_updated = [
-            _normalize_vault_relative_path(r.file_path)
+            _normalize_vault_relative_path(r.file_path, vault_root=vault_root)
             for r in editor_output.results
             if r.action == "updated"
         ]
