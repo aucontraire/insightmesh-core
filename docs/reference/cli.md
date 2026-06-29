@@ -178,7 +178,15 @@ git -C <vault>/InsightMesh/.history log --oneline --grep 'checkpoint:cp-002'
 
 **Fallback behavior**: provenance failures never fail the run. When `git` is not on `PATH`, the JSON + frontmatter still land and `[provenance] git not on PATH; skipping shadow-repo commit` is logged to stderr. When the commit fails (permissions, disk, hooks), JSON + frontmatter still landed; the next successful commit sweeps up orphaned snapshots. When a page's existing frontmatter is unparseable YAML, that page is skipped with a logged warning and the rest of the work proceeds. Run exit code is determined solely by agent work + the Spec 004 cursor save.
 
-**Companion plugin (planned)**: a dedicated read-only Obsidian viewer plugin that renders the JSON + frontmatter + shadow-git diffs into a native side-pane experience is the planned next-step (separate repo: [aucontraire/insightmesh-obsidian](https://github.com/aucontraire/insightmesh-obsidian)). Until it ships, the shell-tool recipes above are the path. The spec's `quickstart.md` also documents [obsidian-git](https://github.com/Vinzent03/obsidian-git) as a tactical viewer with documented caveats.
+**Companion plugin (beta via BRAT)**: a dedicated read-only Obsidian viewer plugin that renders the JSON + frontmatter + shadow-git diffs into a native side-pane experience is available as a v0.1 beta. Install via [BRAT](https://github.com/TfTHacker/obsidian42-brat):
+
+1. In Obsidian: Settings → Community plugins → install + enable BRAT
+2. BRAT settings → "Add Beta Plugin" → paste `aucontraire/insightmesh-obsidian`
+3. Enable "InsightMesh Viewer" in Community plugins
+
+Open any wiki page produced by `insightmesh batch`; the viewer side-pane renders the page's provenance with click-through to its source conversation, checkpoint history, and snapshot-to-snapshot diffs. Compatibility: viewer 0.1.x supports core `schema_version=1`. Beta software, expect rough edges; file issues at [aucontraire/insightmesh-obsidian/issues](https://github.com/aucontraire/insightmesh-obsidian/issues). The plugin repo: [aucontraire/insightmesh-obsidian](https://github.com/aucontraire/insightmesh-obsidian).
+
+For users who prefer terminal-only inspection (or pre-plugin-install setup), the shell-tool recipes above remain the path. The spec's `quickstart.md` also documents [obsidian-git](https://github.com/Vinzent03/obsidian-git) as a tactical viewer with documented caveats.
 
 ### Agent failure scratch
 
