@@ -11,7 +11,7 @@ Canonical reference for the `insightmesh` command-line tool. For walkthroughs se
 
 ```bash
 insightmesh --version
-# insightmesh 0.4.0
+# insightmesh 0.5.0
 ```
 
 ---

@@ -46,7 +46,7 @@ Pipeline complete: 3 created, 0 updated, 3 editor decisions logged.
 
 Three new wiki pages appear in `~/Obsidian/MyVault/InsightMesh/`, cross-linked via `[[wiki links]]`, with full session log in `.logs/`.
 
-> 🚀 **Latest (v0.4.0)**: Spec 004 adds long-chat checkpointing with auto-resume — `--resume`, `--max-exchanges N`, `--force-resume`, `--retry`. See the [Long conversations how-to](https://aucontraire.github.io/insightmesh-core/how-to/long-conversations/).
+> 🚀 **Latest (v0.5.0)**: Spec 005 adds per-page provenance — every wiki page carries a cumulative `provenance:` frontmatter block (latest checkpoint, contributing conversations, action, confidence, total edits, exchange count), backed by a permanent per-checkpoint JSON record at `<vault>/InsightMesh/.history/checkpoints/<conv-id>/cp-<NNN>.json` and a shadow git repository for `git log -p` style diff history of every page's evolution. All three transcript shapes (Claude.ai / ChatGPT / Spec 001 flat-array) validated on real data. See the [CLI reference](https://aucontraire.github.io/insightmesh-core/reference/cli/#per-checkpoint-provenance-record-spec-005) for the on-disk layout. A dedicated in-Obsidian viewer plugin ([insightmesh-obsidian](https://github.com/aucontraire/insightmesh-obsidian)) is planned next.
 >
 > Prior milestones: Spec 002 added Claude.ai / ChatGPT export support (`insightmesh list <export.json>` + `--conversation <id-or-index>`); Spec 003 added attachment and pasted-text synthesis for Claude exports. The Spec 001 flat `{role, content}` transcript format is still supported unchanged (FR-014 backward compat).
 
@@ -94,6 +94,7 @@ Phase B (planned in Spec 002+) will migrate orchestration to LangGraph for deter
 | Pre-flight validation (vault + agent presence) | ✅ Spec 002 |
 | Attachment and pasted-text synthesis (Claude exports) | ✅ Spec 003 |
 | Long-chat checkpointing + auto-resume + per-invocation cap | ✅ Spec 004 |
+| Per-page provenance (checkpoint JSON + frontmatter + shadow-git diff history) | ✅ Spec 005 |
 | Live inquiry (ask questions, refine, synthesize) | 🟡 planned |
 | Bias/assumption checking (Critic agent) | 🟡 planned |
 | Web research (Researcher agent) | 🟡 planned |
