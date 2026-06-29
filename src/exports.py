@@ -16,6 +16,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Literal
 
 from echomine import (
     ClaudeAdapter,
@@ -318,13 +319,18 @@ def extract_conversation(path: Path, selector: str) -> ChatTranscript:
         raise KeyError(f"no conversation matches --conversation '{selector}' in {path}.")
 
     messages = _walk_canonical_thread(target)
-    role_content = _to_role_content(messages)
+    role_content = _to_role_content_with_ids(messages)
     if not role_content:
         raise EmptyConversationError(selected_id)
 
-    # Build a ChatTranscript using src/transcript.py's existing pairing logic indirectly:
-    # we construct paired Exchanges from the role/content sequence.
+    # Build a ChatTranscript with paired Exchanges from the role/content sequence.
+    # Track per-exchange message identifiers (Spec 005 FR-004) by capturing the
+    # echomine Message.id from the user message and from the FIRST assistant
+    # message in each concatenated run (per-run "the message that started the
+    # response"). When a transcript carries no message ids (Spec 001 flat-array
+    # or pre-1.5.0 echomine), the entries are recorded as null.
     exchanges: list[Exchange] = []
+    exchange_message_ids: dict[int, dict[str, str | None]] = {}
     idx_counter = 0
     i = 0
     while i < len(role_content):
@@ -332,11 +338,16 @@ def extract_conversation(path: Path, selector: str) -> ChatTranscript:
         if msg["role"] != "user":
             i += 1
             continue
-        user_msg = InternalMessage(role="user", content=msg["content"])
+        user_content = msg["content"] or ""
+        user_msg_id = msg.get("message_id")
+        user_msg = InternalMessage(role="user", content=user_content)
         j = i + 1
         assistant_parts: list[str] = []
+        first_assistant_id: str | None = None
         while j < len(role_content) and role_content[j]["role"] == "assistant":
-            assistant_parts.append(role_content[j]["content"])
+            assistant_parts.append(role_content[j]["content"] or "")
+            if first_assistant_id is None:
+                first_assistant_id = role_content[j].get("message_id")
             j += 1
         asst_msg: InternalMessage | None
         if assistant_parts:
@@ -346,13 +357,48 @@ def extract_conversation(path: Path, selector: str) -> ChatTranscript:
         exchanges.append(
             Exchange(index=idx_counter, user_message=user_msg, assistant_message=asst_msg)
         )
+        exchange_message_ids[idx_counter] = {
+            "user_message_id": user_msg_id,
+            "assistant_message_id": first_assistant_id,
+        }
         idx_counter += 1
         i = max(j, i + 1)
 
     if not exchanges:
         raise EmptyConversationError(selected_id)
 
-    return ChatTranscript(source_path=str(path), exchanges=exchanges)
+    # Spec 005 FR-003 / FR-004 metadata population.
+    provider = _provider_from_adapter(adapter)
+    raw_models_used = getattr(target, "models_used", None)
+    if isinstance(raw_models_used, list):
+        models_used: list[str] = [m for m in raw_models_used if isinstance(m, str)]
+    else:
+        models_used = []
+
+    metadata: dict[str, Any] = {
+        "provider": provider,
+        "models_used": models_used,
+        "exchange_message_ids": exchange_message_ids,
+    }
+
+    return ChatTranscript(source_path=str(path), exchanges=exchanges, metadata=metadata)
+
+
+def _provider_from_adapter(
+    adapter: ConversationProvider[Conversation],
+) -> Literal["anthropic", "openai"] | None:
+    """Tag the provider per Spec 005 FR-003 + Research Decision R3.
+
+    Done at adapter-selection time so the provenance pipeline never has to
+    re-detect the format from the export. Returns None for any adapter the
+    detector might add in the future without a matching provider tag here
+    (defensive; force a None rather than a wrong tag).
+    """
+    if isinstance(adapter, ClaudeAdapter):
+        return "anthropic"
+    if isinstance(adapter, OpenAIAdapter):
+        return "openai"
+    return None
 
 
 def _walk_canonical_thread(conv: Conversation) -> list[Message]:
@@ -405,50 +451,79 @@ def _render_attachments(msg: Message) -> str:
     return "\n\n".join(blocks)
 
 
+def _message_payload(msg: Message) -> str | None:
+    """Return the formatted content string for one echomine.Message, or None to skip.
+
+    Shared by `_to_role_content` and the id-tracking pairing in
+    `extract_conversation`. Encapsulates the Spec 002 FR-026 + Spec 003
+    category / attachment handling rules so both call sites apply identical
+    skip semantics:
+
+    - role NOT in {user, assistant} → skip
+    - category == "attachment" → attachment text only; skip if no text
+    - category == "conversational" → typed content + optional attachment block;
+      skip if both empty
+    - other categories (reasoning/tool_io/system/media/unknown) → skip
+    """
+    if msg.role not in {"user", "assistant"}:
+        return None
+    category = msg.metadata.get("content_type_category", "conversational")
+    attachment_text = _render_attachments(msg)
+    base = msg.content.strip()
+
+    if category == "attachment":
+        if not attachment_text:
+            return None
+        return attachment_text
+    if category == "conversational":
+        if not base and not attachment_text:
+            return None
+        if attachment_text and base:
+            return f"{msg.content}\n\n{attachment_text}"
+        if attachment_text:
+            return attachment_text
+        return msg.content
+    return None
+
+
 def _to_role_content(messages: list[Message]) -> list[dict[str, str]]:
     """Convert echomine.Message list to flat {role, content} per Spec 002 (FR-026) and Spec 003.
 
-    For each user/assistant message:
-    - Render any attachment extracted text via `_render_attachments` FIRST (the
-      harvest-before-skip ordering rule from Spec 003): attachment-only messages
-      arrive with `content_type_category == "attachment"` and `content == ""`,
-      and would otherwise be dropped before their metadata could be read.
-    - `category == "attachment"`: contribute a turn only when attachment text is
-      present; the rendered block becomes the message content.
-    - `category == "conversational"` (default when the field is absent,
-      preserving pre-1.4.0 echomine behavior): contribute the typed content;
-      when attachment text is also present, append it as a labeled block after
-      the typed content.
-    - All other categories (reasoning/tool_io/system/media/unknown) are
-      excluded, even if they carry an attachments key.
-    - Messages with no attachments are unchanged from prior behavior
-      (Spec 003 FR-007 / FR-011 no-regression).
+    Delegates the per-message skip/format logic to `_message_payload`; this
+    function is the role-and-content-only projection (used where message ids
+    are not needed).
     """
     out: list[dict[str, str]] = []
     for msg in messages:
-        if msg.role not in {"user", "assistant"}:
+        content = _message_payload(msg)
+        if content is None:
             continue
-        category = msg.metadata.get("content_type_category", "conversational")
-        attachment_text = _render_attachments(msg)
-        base = msg.content.strip()
-
-        if category == "attachment":
-            if not attachment_text:
-                continue
-            content = attachment_text
-        elif category == "conversational":
-            if not base and not attachment_text:
-                continue
-            if attachment_text and base:
-                content = f"{msg.content}\n\n{attachment_text}"
-            elif attachment_text:
-                content = attachment_text
-            else:
-                content = msg.content
-        else:
-            continue
-
         out.append({"role": msg.role, "content": content})
+    return out
+
+
+def _to_role_content_with_ids(
+    messages: list[Message],
+) -> list[dict[str, str | None]]:
+    """Variant of `_to_role_content` that retains each message's id (Spec 005 FR-004).
+
+    Returns one entry per non-skipped message: `{role, content, message_id}`.
+    `message_id` is `getattr(msg, "id", None)` so transcripts that lack
+    per-message identifiers (Spec 001 flat-array shape; older echomine) yield
+    None values rather than failing.
+    """
+    out: list[dict[str, str | None]] = []
+    for msg in messages:
+        content = _message_payload(msg)
+        if content is None:
+            continue
+        out.append(
+            {
+                "role": msg.role,
+                "content": content,
+                "message_id": getattr(msg, "id", None),
+            }
+        )
     return out
 
 

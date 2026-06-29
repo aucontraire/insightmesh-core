@@ -3,7 +3,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/004-checkpointed-synthesis/plan.md`.
+at `specs/005-page-provenance/plan.md`.
 <!-- SPECKIT END -->
 
 **Governance note**: This file provides operational guidance for AI assistants working on this project. The constitution (`.specify/memory/constitution.md`) provides project law — architectural principles, quality gates, governance. When in conflict, the constitution takes precedence.

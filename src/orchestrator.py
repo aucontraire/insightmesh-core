@@ -22,6 +22,7 @@ import json
 import re
 import sys
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -46,9 +47,26 @@ from src.checkpoint import (
     load_checkpoint,
     save_checkpoint,
 )
+from src.history import (
+    EditorDecisionRecord,
+    ExchangeRecord,
+    FrontmatterParseFailed,
+    ProvenanceFrontmatter,
+    ShadowRepoCommitFailed,
+    ShadowRepoUnavailable,
+    commit_checkpoint,
+    compute_checkpoint_payload,
+    init_shadow_repo,
+    is_git_available,
+    load_prior_exchange_indices,
+    merge_page_provenance,
+    snapshot_page,
+    write_checkpoint_metadata,
+)
 from src.logger import (
     AgentOutput,
     CrossLinkRecord,
+    EditorDecision,
     EditorOutput,
     HistorianOutput,
     SessionError,
@@ -57,6 +75,7 @@ from src.logger import (
     write_session_log,
 )
 from src.transcript import ChatTranscript, Exchange
+from src.wiki import sanitize_filename
 
 ParsedAgentOutput = SynthesisOutput | HistorianOutput | EditorOutput
 
@@ -502,6 +521,336 @@ def _cursor_path_for(logs_dir: Path, transcript_source: Path, conversation_id: s
     return logs_dir / f"{stem}__{safe_id}.checkpoint.json"
 
 
+def _sanitize_conversation_subdir(conv_id: str | None) -> str:
+    """Per-conversation subdir name for the Spec 005 history layout.
+
+    `None` → the literal `"_flat"` sentinel for Spec 001 flat-array transcripts
+    that carry no conversation id. Otherwise applies the same filesystem-safe
+    sanitization as the Spec 004 cursor file naming rule.
+    """
+    if conv_id is None:
+        return "_flat"
+    return conv_id.replace("/", "-").replace(":", "-")
+
+
+def _normalize_vault_relative_path(path: str, vault_root: Path | None = None) -> str:
+    """Ensure a page path is vault-root-relative INCLUDING the `InsightMesh/` prefix.
+
+    Per Spec 005 data-model.md, `EditorDecisionRecord.file` and the
+    `ResultsRecord.pages_*` entries are vault-root-relative POSIX paths
+    (e.g., `InsightMesh/Capitalism's Origins.md`). Editor / MCPVault may emit
+    any of three shapes; this helper normalizes all into the canonical
+    vault-relative form so downstream code can always do `vault_root / file`
+    to resolve.
+
+    Input shapes handled:
+      1. Already prefixed: `"InsightMesh/Page.md"` → unchanged
+      2. Bare filename: `"Page.md"` → `"InsightMesh/Page.md"`
+      3. Absolute filesystem path under the vault (e.g.,
+         `"/Users/me/Vault/InsightMesh/Page.md"`) when `vault_root` is provided:
+         the vault-root prefix is stripped and the rest is returned as a
+         POSIX vault-relative path. Real Editor output via MCPVault hits this
+         path (`WikiPageResult.file_path` is absolute).
+
+    When `vault_root` is None or the absolute path is outside the vault, the
+    path is treated as opaque and prefixed verbatim (defensive: produces
+    visibly-wrong output rather than silently-wrong output that downstream
+    diagnostics can spot).
+    """
+    if vault_root is not None:
+        p = Path(path)
+        if p.is_absolute():
+            # Absolute path outside vault is left for defensive surface (visibly
+            # malformed downstream rather than silently wrong).
+            with suppress(ValueError):
+                path = p.relative_to(vault_root).as_posix()
+    if path.startswith("InsightMesh/"):
+        return path
+    return f"InsightMesh/{path}"
+
+
+def _editor_decision_to_record(
+    decision: EditorDecision, vault_root: Path | None = None
+) -> EditorDecisionRecord:
+    """Project a Spec 001 EditorDecision into the Spec 005 EditorDecisionRecord.
+
+    Maps `draft_title` + `candidate_existing_page` → final vault-relative file
+    path via the same `sanitize_filename` helper Editor uses for new pages.
+    Updates and skips that point at an existing page use `candidate_existing_page`
+    as-is; created pages and orphaned skips derive the filename from
+    `draft_title`. The final path is normalized to the canonical
+    vault-root-relative shape (`InsightMesh/<file>.md`) per Spec 005
+    data-model.md; absolute paths (which MCPVault returns for updates) get
+    stripped to vault-relative when `vault_root` is provided.
+
+    `signals` is `EditorDecisionSignals.model_dump()` (typed model → dict) so
+    the read-side stays opaque per FR-005.
+    """
+    base = decision.candidate_existing_page or sanitize_filename(decision.draft_title)
+    file_path = _normalize_vault_relative_path(base, vault_root=vault_root)
+    return EditorDecisionRecord(
+        file=file_path,
+        action=decision.action,
+        confidence=decision.confidence,
+        rationale=decision.rationale,
+        exchange_indices=list(decision.exchange_indices),
+        signals=decision.signals.model_dump(),
+    )
+
+
+def _build_exchange_records(
+    transcript: ChatTranscript, exchanges_processed: list[Exchange]
+) -> list[ExchangeRecord]:
+    """Build the Spec 005 ExchangeRecord list from processed exchanges + metadata.
+
+    Per FR-004 + Research Decision R4: looks up message ids from the
+    `exchange_message_ids` map populated by src.exports.extract_conversation.
+    Falls back to `None` per index when ids are absent (Spec 001 flat-array
+    transcripts; pre-1.5.0 echomine).
+    """
+    raw_map = transcript.metadata.get("exchange_message_ids", {})
+    msg_ids: dict[int, dict[str, Any]]
+    if isinstance(raw_map, dict):
+        msg_ids = {k: v for k, v in raw_map.items() if isinstance(v, dict)}
+    else:
+        msg_ids = {}
+    records: list[ExchangeRecord] = []
+    for ex in exchanges_processed:
+        ids_for_index = msg_ids.get(ex.index, {})
+        records.append(
+            ExchangeRecord(
+                index=ex.index,
+                user_message_id=ids_for_index.get("user_message_id"),
+                assistant_message_id=ids_for_index.get("assistant_message_id"),
+            )
+        )
+    return records
+
+
+def _write_provenance(
+    *,
+    vault_root: Path,
+    transcript: ChatTranscript,
+    conversation_id: str | None,
+    transcript_hash: str,
+    exchanges_processed: list[Exchange],
+    editor_output: EditorOutput,
+    session_log_path: Path | None,
+    cursor_path: Path,
+    checkpoint_number: int,
+) -> None:
+    """Per FR-017 steps 1+2 (US1 scope): write checkpoint JSON + merge frontmatter.
+
+    Steps 3+4 (page snapshot + shadow-repo commit) are added by T017 (US2).
+
+    Belt-and-suspenders error handling per FR-019: any exception (validation
+    failure, OS error, malformed YAML in a page, page disappeared between
+    Editor's write and this call) is caught at the function boundary and
+    logged to stderr with the `[provenance] ` prefix per FR-016a. The
+    orchestrator's cursor save still advances; the run still exits 0.
+    """
+    try:
+        history_dir = vault_root / "InsightMesh" / ".history"
+        conv_subdir = _sanitize_conversation_subdir(conversation_id)
+
+        try:
+            cursor_rel = str(cursor_path.relative_to(vault_root))
+        except ValueError:
+            cursor_rel = str(cursor_path)
+        if session_log_path is not None:
+            try:
+                session_log_rel = str(session_log_path.relative_to(vault_root))
+            except ValueError:
+                session_log_rel = str(session_log_path)
+        else:
+            session_log_rel = ""
+
+        raw_provider = (
+            transcript.metadata.get("provider") if isinstance(transcript.metadata, dict) else None
+        )
+        provider: Literal["anthropic", "openai"] | None = (
+            raw_provider if raw_provider in ("anthropic", "openai") else None
+        )
+        raw_models = (
+            transcript.metadata.get("models_used", [])
+            if isinstance(transcript.metadata, dict)
+            else []
+        )
+        models_used: list[str]
+        if isinstance(raw_models, list):
+            models_used = [m for m in raw_models if isinstance(m, str)]
+        else:
+            models_used = []
+
+        exchange_records = _build_exchange_records(transcript, exchanges_processed)
+        editor_decision_records = [
+            _editor_decision_to_record(d, vault_root=vault_root) for d in editor_output.decisions
+        ]
+        pages_created = [
+            _normalize_vault_relative_path(r.file_path, vault_root=vault_root)
+            for r in editor_output.results
+            if r.action == "created"
+        ]
+        pages_updated = [
+            _normalize_vault_relative_path(r.file_path, vault_root=vault_root)
+            for r in editor_output.results
+            if r.action == "updated"
+        ]
+        pages_skipped = [d.file for d in editor_decision_records if d.action == "skipped"]
+
+        record = compute_checkpoint_payload(
+            checkpoint_number=checkpoint_number,
+            conversation_id=conversation_id,
+            export_path=transcript.source_path,
+            provider=provider,
+            models_used=models_used,
+            transcript_hash=transcript_hash,
+            exchange_records=exchange_records,
+            editor_decisions=editor_decision_records,
+            pages_created=pages_created,
+            pages_updated=pages_updated,
+            pages_skipped=pages_skipped,
+            session_log_path=session_log_rel,
+            cursor_path=cursor_rel,
+        )
+
+        try:
+            write_checkpoint_metadata(
+                history_dir=history_dir,
+                conversation_subdir=conv_subdir,
+                record=record,
+            )
+        except FileExistsError as exc:
+            print(f"[provenance] checkpoint already exists: {exc}", file=sys.stderr)
+            return
+        except OSError as exc:
+            print(f"[provenance] write failed: {exc}", file=sys.stderr)
+            return
+
+        # R10: empty checkpoint — no frontmatter to update, no git work (US2 also skipped).
+        if not pages_created and not pages_updated:
+            return
+
+        latest_checkpoint_rel = (
+            f"InsightMesh/.history/checkpoints/{conv_subdir}/{record.checkpoint_id}.json"
+        )
+        conversations_for_block = [conversation_id] if conversation_id else []
+
+        for decision in editor_decision_records:
+            if decision.action == "skipped":
+                continue
+            page_file = decision.file
+            page_path = vault_root / page_file
+            incoming = ProvenanceFrontmatter(
+                latest_checkpoint=latest_checkpoint_rel,
+                conversations=conversations_for_block,
+                latest_action=decision.action,
+                latest_confidence=decision.confidence,
+                total_edits=1,
+                exchange_count=0,
+            )
+
+            def _resolve_prior(prior_pointer: str, _pf: str = page_file) -> list[int] | None:
+                return load_prior_exchange_indices(
+                    history_dir_root=vault_root,
+                    latest_checkpoint_relative=prior_pointer,
+                    page_file=_pf,
+                )
+
+            try:
+                merge_page_provenance(
+                    page_path=page_path,
+                    incoming=incoming,
+                    incoming_exchange_indices=list(decision.exchange_indices),
+                    resolve_prior_indices=_resolve_prior,
+                )
+            except FrontmatterParseFailed as exc:
+                print(
+                    f"[provenance] frontmatter parse failed for {page_path}: {exc}",
+                    file=sys.stderr,
+                )
+                continue
+            except FileNotFoundError:
+                print(
+                    f"[provenance] page disappeared before snapshot: {page_path}",
+                    file=sys.stderr,
+                )
+                continue
+            except OSError as exc:
+                print(
+                    f"[provenance] write failed for {page_path}: {exc}",
+                    file=sys.stderr,
+                )
+                continue
+
+        # FR-017 step 3: snapshot each touched page into .history/pages/<slug>.md.
+        # Per-page failure (page deleted between merge and snapshot) is isolated;
+        # other snapshots and the commit step proceed regardless.
+        snapshot_filenames: list[str] = []
+        for decision in editor_decision_records:
+            if decision.action == "skipped":
+                continue
+            page_file = decision.file
+            page_path = vault_root / page_file
+            slug = page_file.removeprefix("InsightMesh/")
+            try:
+                snapshot_page(
+                    source_page=page_path,
+                    history_dir=history_dir,
+                    sanitized_slug=slug,
+                )
+                snapshot_filenames.append(slug)
+            except FileNotFoundError:
+                print(
+                    f"[provenance] page disappeared before snapshot: {page_path}",
+                    file=sys.stderr,
+                )
+                continue
+            except OSError as exc:
+                print(
+                    f"[provenance] snapshot failed for {page_path}: {exc}",
+                    file=sys.stderr,
+                )
+                continue
+
+        # FR-017 step 4: initialize shadow repo (idempotent per FR-012)
+        # and commit. Per FR-015, missing git is a non-fatal fallback: log
+        # and return without commit; the JSON + frontmatter already landed.
+        if not is_git_available():
+            print(
+                "[provenance] git not on PATH; skipping shadow-repo commit",
+                file=sys.stderr,
+            )
+            return
+
+        try:
+            init_shadow_repo(history_dir)
+        except ShadowRepoUnavailable as exc:
+            print(
+                f"[provenance] shadow repo unavailable: {exc}",
+                file=sys.stderr,
+            )
+            return
+
+        try:
+            commit_checkpoint(
+                history_dir=history_dir,
+                checkpoint_id=record.checkpoint_id,
+                conversation_id=conversation_id,
+                conversation_subdir=conv_subdir,
+                decisions=editor_decision_records,
+                pages_created=pages_created,
+                pages_updated=pages_updated,
+                snapshot_filenames=snapshot_filenames,
+            )
+        except ShadowRepoCommitFailed as exc:
+            print(f"[provenance] commit failed: {exc}", file=sys.stderr)
+
+    except Exception as exc:
+        # FR-019: provenance failure MUST NOT propagate to fail the run.
+        print(f"[provenance] write failed: {exc}", file=sys.stderr)
+
+
 def _save_failed_cursor(
     path: Path,
     transcript: ChatTranscript,
@@ -729,6 +1078,7 @@ async def run_batch(
                 topics_covered_digest=accumulated_digest if next_checkpoint_number > 1 else None,
                 checkpoint_number=next_checkpoint_number,
             )
+            session_log_path: Path | None = None
             if logs_dir is not None:
                 session_log = _build_session_log(
                     transcript=sliced,
@@ -736,7 +1086,7 @@ async def run_batch(
                     batch_started_wall=batch_started_wall,
                     batch_duration=batch_duration,
                 )
-                write_session_log(session_log, logs_dir)
+                session_log_path = write_session_log(session_log, logs_dir)
             editor_output = _finalize_result(agent_calls)
         except Exception as exc:
             _save_failed_cursor(
@@ -755,6 +1105,24 @@ async def run_batch(
             increment = historian_call.parsed_output.topics_covered_increment
             if increment:
                 accumulated_digest.extend(increment)
+
+        # FR-017: provenance bookkeeping after Editor success, before cursor save.
+        # Belt-and-suspenders try/except: _write_provenance also swallows its own
+        # errors per FR-019, but a top-level guard makes the contract explicit.
+        try:
+            _write_provenance(
+                vault_root=vault_path,
+                transcript=transcript,
+                conversation_id=conversation_id,
+                transcript_hash=current_hash,
+                exchanges_processed=slice_exchanges,
+                editor_output=editor_output,
+                session_log_path=session_log_path,
+                cursor_path=checkpoint_path,
+                checkpoint_number=next_checkpoint_number,
+            )
+        except Exception as exc:
+            print(f"[provenance] write failed: {exc}", file=sys.stderr)
 
         last_idx = slice_exchanges[-1].index
         processed_count += len(slice_exchanges)

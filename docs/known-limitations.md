@@ -116,6 +116,16 @@ InsightMesh today synthesizes from what's already in the transcript. It cannot f
 
 The frontmatter `source` field points at the transcript file as a whole. Individual claims within a synthesized page aren't traced back to specific exchanges or web sources.
 
+### ~~No per-page provenance~~ — RESOLVED in Spec 005
+
+Resolved by Spec 005's structured per-checkpoint JSON + cumulative frontmatter `provenance:` block + shadow git repository. For any wiki page produced by the InsightMesh CLI, the user can now answer "where did this page come from" without re-running the pipeline:
+
+- `<vault>/InsightMesh/.history/checkpoints/<conv-id-or-_flat>/cp-<NNN>.json` records the conversation block (id, export path, provider, models_used, transcript hash), per-exchange message identifiers, and per-page Editor decisions (action, confidence, rationale, contributing exchange indices, full signals dict).
+- Each touched wiki page's YAML frontmatter gains a `provenance:` block with `latest_checkpoint` pointer + cumulative `conversations`, `latest_action`, `latest_confidence`, `total_edits`, `exchange_count`.
+- A shadow git repository at `<vault>/InsightMesh/.history/.git/` (separate from any git you run on your vault root) commits a snapshot of each touched page per checkpoint with a machine-greppable subject line, enabling `git log -p pages/<slug>.md` style diff history.
+
+The shadow repo layer is optional: when `git` isn't on PATH (or any git step fails), the JSON + frontmatter still land and the run exits 0. See [`specs/005-page-provenance/quickstart.md`](https://github.com/aucontraire/insightmesh-core/blob/master/specs/005-page-provenance/quickstart.md) for `jq` and `git log` recipes plus caveats about using obsidian-git as a tactical viewer until the dedicated [`insightmesh-obsidian`](https://github.com/aucontraire/insightmesh-obsidian) viewer plugin ships.
+
 ---
 
 ## Architecture decisions you might wonder about

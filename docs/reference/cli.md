@@ -11,7 +11,7 @@ Canonical reference for the `insightmesh` command-line tool. For walkthroughs se
 
 ```bash
 insightmesh --version
-# insightmesh 0.4.0
+# insightmesh 0.5.0
 ```
 
 ---
@@ -111,6 +111,8 @@ See [How-to: Long conversations](../how-to/long-conversations.md) for the full r
 
 `<vault>/InsightMesh/*.md` — wiki pages produced by Editor. Each has YAML frontmatter (`title`, `created`, `updated`, `source`, `tags`).
 
+Pages touched by Spec 005's checkpoint pipeline additionally carry a `provenance:` block (see below).
+
 ### Session logs
 
 `<vault>/InsightMesh/.logs/<timestamp>-<stem>.json` — one per pipeline invocation. Records per-agent input summaries, parsed outputs, durations, status, cross-links, exchanges processed.
@@ -136,6 +138,47 @@ Cursor schema (Pydantic v2, strict, `extra=forbid`):
 | `topics_covered_digest` | list of `{page_title, gist}` | Accumulated across checkpoints. Passed to Synthesis on second-or-later checkpoints. |
 | `meaning_summary` | str \| null | Forward-compatibility hook. Always null in this spec. |
 | `updated_at` | datetime (UTC) | Wall-clock of the last successful write. |
+
+### Per-checkpoint provenance record (Spec 005)
+
+After each successful checkpoint, the orchestrator persists a permanent, queryable record of what happened in three complementary artifacts:
+
+**1. Checkpoint JSON** at `<vault>/InsightMesh/.history/checkpoints/<conv-subdir>/cp-<NNN>.json`, where `<conv-subdir>` is the conversation identifier (filesystem-unsafe characters sanitized to hyphens), OR the literal `_flat` sentinel when the source transcript carries no conversation id (Spec 001 flat-array shape). Records the conversation block (provider, models_used, transcript_hash), per-exchange message identifiers from echomine, per-page Editor decisions including rationale + confidence + the full signals dict, the results summary, and convenience pointers to the session log + cursor. Self-sufficient: provenance queries do not need to traverse those convenience pointers.
+
+```bash
+# What did checkpoint cp-002 do?
+jq . <vault>/InsightMesh/.history/checkpoints/<conv-id>/cp-002.json
+
+# Which pages did Editor touch in this conversation, ranked by frequency?
+jq -s '[.[] | .editor.decisions[] | .file] | group_by(.) | map({file: .[0], count: length}) | sort_by(-.count)' \
+  <vault>/InsightMesh/.history/checkpoints/<conv-id>/cp-*.json
+```
+
+**2. Frontmatter `provenance:` block** on every wiki page Editor created or updated. Cumulative across checkpoints — `total_edits` increments, `conversations` accumulates the union, `exchange_count` is the union size of contributing exchange indices.
+
+```yaml
+provenance:
+  latest_checkpoint: InsightMesh/.history/checkpoints/<conv-id>/cp-002.json
+  conversations: [<conv-id>]
+  latest_action: updated
+  latest_confidence: high
+  total_edits: 3
+  exchange_count: 7
+```
+
+**3. Shadow git repository** at `<vault>/InsightMesh/.history/.git/`, distinct from any git the user runs on their vault root. One commit per successful checkpoint, with a machine-greppable subject and body listing every touched page (action + confidence). Page snapshots live at `.history/pages/<sanitized-slug>.md` so `git log -p pages/<slug>.md` shows the page's evolution across edits.
+
+```bash
+git -C <vault>/InsightMesh/.history log --oneline
+git -C <vault>/InsightMesh/.history log -p pages/<some-page>.md
+git -C <vault>/InsightMesh/.history log --oneline --grep 'checkpoint:cp-002'
+```
+
+**Schema versioning**: the JSON files carry `schema_version: 1`. Within v1, evolution is additive (optional fields may be added without bumping); readers tolerate unknown extras and missing optionals.
+
+**Fallback behavior**: provenance failures never fail the run. When `git` is not on `PATH`, the JSON + frontmatter still land and `[provenance] git not on PATH; skipping shadow-repo commit` is logged to stderr. When the commit fails (permissions, disk, hooks), JSON + frontmatter still landed; the next successful commit sweeps up orphaned snapshots. When a page's existing frontmatter is unparseable YAML, that page is skipped with a logged warning and the rest of the work proceeds. Run exit code is determined solely by agent work + the Spec 004 cursor save.
+
+**Companion plugin (planned)**: a dedicated read-only Obsidian viewer plugin that renders the JSON + frontmatter + shadow-git diffs into a native side-pane experience is the planned next-step (separate repo: [aucontraire/insightmesh-obsidian](https://github.com/aucontraire/insightmesh-obsidian)). Until it ships, the shell-tool recipes above are the path. The spec's `quickstart.md` also documents [obsidian-git](https://github.com/Vinzent03/obsidian-git) as a tactical viewer with documented caveats.
 
 ### Agent failure scratch
 
