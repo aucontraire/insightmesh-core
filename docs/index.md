@@ -10,8 +10,8 @@ hide:
 
 InsightMesh turns your AI chat history into a **growing wiki you actually own**. Local-first, cross-linked, transparent about what it knows.
 
-!!! tip "Latest: Spec 004 — long-chat checkpointing (v0.4.0)"
-    Long conversations are now processed in linear forward checkpoints with auto-resume. A per-conversation cursor lets re-runs pick up where they left off; wiki pages from prior checkpoints carry forward as compact context. New flags: `--resume`, `--max-exchanges N`, `--force-resume`, `--retry`. See [How-to: Long conversations](how-to/long-conversations.md). Prior milestones still apply: Spec 002 (`insightmesh list` + `--conversation`, Claude.ai / ChatGPT export support via [`echomine`](https://pypi.org/project/echomine/)) and Spec 003 (attachment + pasted-text synthesis from Claude exports).
+!!! tip "Latest: Spec 005 — per-page provenance"
+    Every wiki page now carries a `provenance:` frontmatter block (latest checkpoint, contributing conversations, action, confidence, total edits, cumulative exchange count) backed by a permanent per-checkpoint JSON record at `<vault>/InsightMesh/.history/checkpoints/<conv-id>/cp-<NNN>.json` plus a shadow git repository for `git log -p` style diff history of every page's evolution across edits. All three transcript shapes (Claude.ai, ChatGPT, Spec 001 flat-array) validated on real data. See the [CLI reference](reference/cli.md#per-checkpoint-provenance-record-spec-005) for the on-disk layout and `specs/005-page-provenance/quickstart.md` in the repo for `jq` + `git log` recipes. A dedicated in-Obsidian viewer plugin ([insightmesh-obsidian](https://github.com/aucontraire/insightmesh-obsidian)) is the planned next step. Prior milestones still apply: Spec 004 (long-chat checkpointing with `--resume` / `--max-exchanges`), Spec 003 (attachment + pasted-text synthesis), Spec 002 (`insightmesh list` + multi-conversation export selection via [`echomine`](https://pypi.org/project/echomine/)).
 
 ---
 
