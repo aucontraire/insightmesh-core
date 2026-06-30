@@ -26,6 +26,7 @@ AI-generated code tends toward over-engineering, speculative abstraction, and un
   - ❌ **Reject**: Dependencies that add abstraction layers (orchestration frameworks, ORMs over a single DB, service meshes), enable speculative capability (multi-provider abstractions before multiple providers exist), or solve problems not yet measured.
   - New dependencies outside the Project Standards section MUST be added to the Complexity Justification Table with rationale.
 - **No Speculative Architecture**: Build for what you need now, not what you might need later. YAGNI is law.
+- **No Hallucinated Classes**: Before authoring, importing, instantiating, subclassing, or renaming a class, consult the AST-derived registry at `.claude/class-registry.json` (rebuilt automatically via pre-commit + Claude Code PostToolUse hooks; tooling in `.claude/tools/`). Never grep + guess which definition of a duplicated name to use; run `analyze_class_usage.py <ClassName>` to enumerate every site a rename would touch. Mirrors the Pydantic-everywhere rule's pattern: a normative requirement backed by a mechanical refresh, not a vibes-only convention.
 
 **Rationale**: CogniVault had 167 files, 20+ modules, and complex factory hierarchies for a 4-agent system. The patterns were good but buried under accidental complexity. A new developer needed weeks to understand it. InsightMesh targets 30-40 focused files where a new developer is productive in hours. The dependency distinction matters: CogniVault didn't fail because it had dependencies — it failed because it had *abstraction* dependencies (LangGraph wrappers, repository patterns) that hid simple operations behind generic interfaces.
 
@@ -144,10 +145,11 @@ Constitution version follows semantic versioning:
 - **MINOR**: New principle/section added or materially expanded guidance
 - **PATCH**: Clarifications, wording, typo fixes, non-semantic refinements
 
-**Version**: 1.1.4 | **Ratified**: 2026-05-16 | **Last Amended**: 2026-05-16
+**Version**: 1.1.5 | **Ratified**: 2026-05-16 | **Last Amended**: 2026-06-29
 
 ### Changelog
 
+- **1.1.5** (2026-06-29): Added "No Hallucinated Classes" bullet to Anti-Slop Requirements. Codifies the class-registry workflow (`.claude/tools/` + `.claude/class-registry.json`) as a normative pre-flight before authoring/importing/renaming any class. Mirrors the mechanical-enforcement pattern of the Pydantic-everywhere rule (1.1.2): rule + automated refresh, not vibes-only.
 - **1.1.4** (2026-05-16): Added `MkDocs Material` to Project Standards Development list for project documentation. Single-bounded-capability dep (documentation rendering only). Justified by 2026-standard Python ecosystem convention (FastAPI, Pydantic, Typer, Ruff all use it) and "building in public" content strategy benefits from a real docs site early.
 - **1.1.3** (2026-05-16): Added `Typer` to Project Standards Runtime list. Justified as force-multiplier dep (type-hint-driven CLI parsing, replaces argparse boilerplate). Single bounded capability (CLI parsing). Aligns with the project's broader pattern of letting type hints drive behavior (Pydantic for data, mypy strict for checking, Typer for CLI).
 - **1.1.2** (2026-05-16): Sharpened the Pydantic-vs-dataclass rule in §Project Standards Conventions to remove ambiguity ("all data models" → "all Python classes that group fields together"). Explicitly prohibited `@dataclass`, `typing.NamedTuple`, `collections.namedtuple` in `src/` and `tests/`. Added mechanical enforcement via ruff `TID251` (`flake8-tidy-imports.banned-api`). Root cause: implementation slipped a `@dataclass` for an internal container because the old "data models" wording was ambiguous and the rule had no automated enforcement.
