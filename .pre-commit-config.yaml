@@ -1,0 +1,12 @@
+repos:
+  - repo: local
+    hooks:
+      - id: regenerate-class-registry
+        name: Regenerate .claude/class-registry.json
+        entry: uv run python .claude/tools/generate_class_registry.py
+        language: system
+        types: [python]
+        files: ^src/
+        pass_filenames: false
+        always_run: false
+        verbose: false

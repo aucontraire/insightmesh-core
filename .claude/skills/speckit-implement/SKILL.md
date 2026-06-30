@@ -54,6 +54,10 @@ You **MUST** consider the user input before proceeding (if not empty).
     ```
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
+## Class Registry (pre-flight before authoring any class)
+
+Before implementing any task that creates, modifies, or imports a Python class, consult `.claude/class-registry.json` (see project CLAUDE.md §0c). Do NOT grep for a class and guess which definition to import; if the registry shows multiple definitions of a duplicated name, run `uv run python .claude/tools/analyze_class_usage.py <ClassName>` to resolve the ambiguity by listing every call site. Regenerate if missing: `uv run python .claude/tools/generate_class_registry.py`.
+
 ## Outline
 
 1. Run `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").

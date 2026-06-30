@@ -20,6 +20,10 @@ Optional: the user can specify issue IDs to address (e.g., "I1, C1, A1") or a se
 
 This skill MUST be run after `/speckit-analyze` has produced a report. If no recent analyze report exists in the conversation, instruct the user to run `/speckit-analyze` first.
 
+## Class Registry (use when remediations touch model/schema shapes)
+
+When a remediation involves a class name or field list (data-model.md drift, contracts/ misalignment, schema renames), consult `.claude/class-registry.json` (see project CLAUDE.md §0c) for the live shape rather than re-grepping source files. Run `uv run python .claude/tools/analyze_class_usage.py <ClassName>` to enumerate every import / inheritance / instantiation / type-annotation site a rename or field change would affect — picking the wrong definition of a duplicated name produces a fix that looks plausible but targets the wrong file. Regenerate if missing: `uv run python .claude/tools/generate_class_registry.py`.
+
 ## Workflow
 
 1. **Find the active feature**: Run `.specify/scripts/bash/check-prerequisites.sh --json --paths-only` to get `FEATURE_DIR`.

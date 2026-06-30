@@ -1,5 +1,19 @@
 {
   "enabledPlugins": {
     "obsidian@obsidian-skills": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null || echo .)\" && python3 .claude/tools/_hook_regen_registry.py",
+            "timeout": 35
+          }
+        ]
+      }
+    ]
   }
 }

@@ -35,6 +35,17 @@ Pattern: `Agent(subagent_type="claude-code-guide", description="...", prompt="Wh
 
 (This rule is also in `~/.claude/CLAUDE.md` for cross-project enforcement.)
 
+## 0c. Class Registry — consult before authoring or refactoring classes
+
+`.claude/class-registry.json` — AST-derived index of every class under `src/` (gitignored; regenerated automatically). For any class you're about to author, import, instantiate, subclass, or rename: consult the registry first. Do not grep + guess; do not assume a field exists because it would be reasonable. The codebase is small (~50 classes today, no duplicate names) but the hallucination guard is highest-value before duplicates appear, when the cost of "picking the wrong real class" goes from theoretical to silent breakage.
+
+Helpers in `.claude/tools/`:
+- `generate_class_registry.py` — rebuild the registry (runs automatically; call manually if stale: `uv run python .claude/tools/generate_class_registry.py`)
+- `analyze_class_usage.py <ClassName> [--json]` — every import / inheritance / instantiation / type-annotation / reference of a class, with file:line. Use BEFORE any rename.
+- `validate_class_conflicts.py [--stats | --suggest <Name>]` — reports duplicate-name conflicts; suggests renames informed by module stem + class type.
+
+Auto-refresh: pre-commit hook (`./.pre-commit-config.yaml`) on Python file changes under `src/`, plus a Claude Code PostToolUse hook (`.claude/settings.json` → `_hook_regen_registry.py`) with a 15-second mtime debounce so back-to-back edits don't thrash. Failures are silent — a broken tool never blocks edits; failures surface at pre-commit time.
+
 ---
 
 ## 1. Think Before Coding
